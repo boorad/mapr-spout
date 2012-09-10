@@ -7,7 +7,12 @@ import com.google.common.io.Closeables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -59,8 +64,8 @@ public class DirectoryScanner {
         return pendingFiles.poll();
     }
 
-    public InputStream nextInput() {
-        InputStream r;
+    public FileInputStream nextInput() {
+        FileInputStream r;
 
         File currentFile = scanForFiles();
         if (currentFile == null) {
@@ -85,6 +90,39 @@ public class DirectoryScanner {
         }
         liveFile = currentFile;
         liveInput = r;
+        return r;
+    }
+
+    public File getLiveFile() {
+        return liveFile;
+    }
+
+    public Set<File> getOldFiles() {
+        return oldFiles;
+    }
+
+    public File getInputDirectory() {
+        return inputDirectory;
+    }
+
+    public Pattern getFileNamePattern() {
+        return fileNamePattern;
+    }
+
+    public void setOldFiles(Set<File> oldFiles) {
+        this.oldFiles = oldFiles;
+    }
+
+    public FileInputStream forceInput(File file, long offset) {
+        FileInputStream r = null;
+        try {
+            liveFile = file;
+            r = new FileInputStream(liveFile);
+            r.getChannel().position(offset);
+            liveInput = r;
+        } catch (IOException e) {
+            log.warn("Couldn't open replay file", e);
+        }
         return r;
     }
 }
