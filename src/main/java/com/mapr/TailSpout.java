@@ -4,26 +4,23 @@ import backtype.storm.spout.SpoutOutputCollector;
 import backtype.storm.task.TopologyContext;
 import backtype.storm.topology.IRichSpout;
 import backtype.storm.topology.OutputFieldsDeclarer;
-import backtype.storm.tuple.Tuple;
-import com.google.common.base.Charsets;
+import backtype.storm.tuple.Fields;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.io.Files;
-import com.google.gson.Gson;
 import com.mapr.com.mapr.storm.DirectoryScanner;
 import com.mapr.com.mapr.storm.StreamParser;
 import com.mapr.com.mapr.storm.StreamParserFactory;
+import com.mapr.storm.PendingMessage;
+import com.mapr.storm.SpoutState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -32,14 +29,14 @@ import java.util.regex.Pattern;
  * around the event loop.  It is also possible that we will hit the end of a file of records and
  * notice that a new file has been started.  In that case, we will move to that new file and
  * start emitting the records we read from that file.
- *
+ * <p/>
  * There are two modes in which a TailSpout can operate.  In unreliable mode, transactions are
  * read, but ack's and fail's are ignored so that if transactions are not processed, they are
  * lost.  The TailSpout will checkpoint it's own progress periodically and on deactivation so
  * that when the TailSpout is restarted, it will start from close to where it left off.  The
  * restart will be exact with a clean shutdown and can be made arbitrarily precise with an
  * unclean shutdown.
- *
+ * <p/>
  * In the reliable mode, an in-memory table of unacknowledged transactions is kept.  Any that
  * fail are retransmitted and those that succeed are removed from the table.  When a checkpoint
  * is done, the file name and offset of the earliest unacknowledged transaction in that file
@@ -48,7 +45,7 @@ import java.util.regex.Pattern;
  * possibly the current and previous file.  This will generally replay a few extra transactions,
  * but if there is a cool-down period on shutdown, this will should very few extra transactions
  * transmitted on startup.
- *
+ * <p/>
  * One possible extension would be to allow the system to run in reliable mode, but not save
  * the offsets for unacked transactions.  This would be good during orderly shutdowns, but very
  * bad in the event of an unorderly shutdown.
@@ -67,43 +64,19 @@ public class TailSpout implements IRichSpout {
     private File statusFile;
 
     // all others are created on the fly
-    private Map<Long, Message> ackBuffer = Maps.newTreeMap();
+    private Map<Long, PendingMessage> ackBuffer = Maps.newTreeMap();
     private long messageId = 0;
 
     // how often should we save our state?
     private long checkPointInterval = 100;
-    private Queue<Message> pendingReplays = Lists.newLinkedList();
-
-    private static class Message {
-        File logFile;
-        long offset;
-        List<Object> tuple;
-
-        private Message(File logFile, long offset, List<Object> tuple) {
-            this.logFile = logFile;
-            this.offset = offset;
-            this.tuple = tuple;
-        }
-
-        public List<Object> getTuple() {
-            return tuple;
-        }
-
-        public File getFile() {
-            return logFile;
-        }
-
-        public long getOffset() {
-            return offset;
-        }
-    }
+    private Queue<PendingMessage> pendingReplays = Lists.newLinkedList();
 
     private StreamParser parser = null;
     private SpoutOutputCollector collector;
 
     public TailSpout(StreamParserFactory factory, File statusFile) throws IOException {
         this.factory = factory;
-        restoreState(statusFile);
+        scanner = SpoutState.restoreState(pendingReplays, statusFile);
     }
 
     public TailSpout(StreamParserFactory factory, File statusFile, File inputDirectory, final Pattern inputFileNamePattern) {
@@ -118,9 +91,13 @@ public class TailSpout implements IRichSpout {
         return old;
     }
 
+    public void setCheckPointInterval(long checkPointInterval) {
+        this.checkPointInterval = checkPointInterval;
+    }
+
     @Override
     public void declareOutputFields(OutputFieldsDeclarer outputFieldsDeclarer) {
-        parser.declareOutputFields(outputFieldsDeclarer);
+        outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
     }
 
     @Override
@@ -146,7 +123,7 @@ public class TailSpout implements IRichSpout {
 
     @Override
     public void deactivate() {
-        recordCurrentState(true);
+        SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
     }
 
     @Override
@@ -183,90 +160,34 @@ public class TailSpout implements IRichSpout {
             if (r != null) {
                 if (replayFailedMessages) {
                     collector.emit(r, messageId);
-                    ackBuffer.put(messageId, new Message(scanner.getLiveFile(), position, r));
+                    ackBuffer.put(messageId, new PendingMessage(scanner.getLiveFile(), position, r));
                     messageId++;
                 } else {
                     collector.emit(r);
                 }
-                recordCurrentState(false);
+                if (messageId % checkPointInterval == 0) {
+                    SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
+                }
             }
         }
         // exit only when all files have been processed completely
     }
 
     private FileInputStream openNextInput() {
-        while (pendingReplays.size() > 0) {
-            Message next = pendingReplays.poll();
+        PendingMessage next = pendingReplays.poll();
+        while (next != null) {
             if (next.getFile().exists()) {
                 return scanner.forceInput(next.getFile(), next.getOffset());
             } else {
                 log.error("Replay file {} has disappeared", next.getFile());
             }
+            next = pendingReplays.poll();
         }
 
         // look for a new file
         FileInputStream r = scanner.nextInput();
         parser = factory.createParser(r);
         return r;
-    }
-
-    private void recordCurrentState(boolean force) {
-        long position = parser.currentOffset();
-
-        if (force || messageId % checkPointInterval == 0) {
-            try {
-                // find smallest offset for each file
-                Map<File, Long> offsets = Maps.newHashMap();
-                for (Message m : ackBuffer.values()) {
-                    Long x = offsets.get(m.getFile());
-                    if (x == null) {
-                        x = m.getOffset();
-                        offsets.put(m.getFile(), x);
-                    }
-                    if (m.getOffset() < x) {
-                        offsets.put(m.getFile(), x);
-                    }
-                }
-
-                Long x = offsets.get(scanner.getLiveFile());
-                if (x == null) {
-                    offsets.put(scanner.getLiveFile(), parser.currentOffset());
-                }
-
-                Files.write(new Gson().toJson(new State(position, scanner, offsets)), statusFile, Charsets.UTF_8);
-            } catch (IOException e) {
-                log.error("Unable to write status to {}", statusFile);
-            }
-        }
-    }
-
-    private void restoreState(File statusFile) throws IOException {
-        BufferedReader in = Files.newReader(statusFile, Charsets.UTF_8);
-        State s = new Gson().fromJson(in, State.class);
-        scanner = new DirectoryScanner(s.inputDirectory, s.filePattern);
-
-        scanner.setOldFiles(s.oldFiles);
-        for (File file : s.offsets.keySet()) {
-            pendingReplays.add(new Message(file, s.offsets.get(file), null));
-        }
-    }
-
-    public static class State {
-        private long position;
-        private final File liveFile;
-        private final Set<File> oldFiles;
-        private final File inputDirectory;
-        private final Pattern filePattern;
-        private Map<File, Long> offsets;
-
-        public State(long position, DirectoryScanner scanner, Map<File, Long> offsets) {
-            this.position = position;
-            this.liveFile = scanner.getLiveFile();
-            this.oldFiles = scanner.getOldFiles();
-            this.inputDirectory = scanner.getInputDirectory();
-            this.filePattern = scanner.getFileNamePattern();
-            this.offsets = offsets;
-        }
     }
 
     @Override
@@ -283,7 +204,7 @@ public class TailSpout implements IRichSpout {
     @Override
     public void fail(Object messageId) {
         if (messageId instanceof Long) {
-            final Message message = ackBuffer.get(messageId);
+            final PendingMessage message = ackBuffer.get(messageId);
             if (message != null) {
                 collector.emit(message.getTuple(), messageId);
             } else {
