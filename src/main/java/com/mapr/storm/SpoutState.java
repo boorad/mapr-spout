@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Random;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -74,7 +75,10 @@ public class SpoutState {
                 offsets.put(scanner.getLiveFile(), parser.currentOffset());
             }
 
-            Files.write(new Gson().toJson(new SpoutState(scanner, offsets)), statusFile, Charsets.UTF_8);
+            final String jsonState = new Gson().toJson(new SpoutState(scanner, offsets));
+            final File newState = new File(statusFile.getParentFile(), String.format("%06x", new Random().nextInt()));
+            Files.write(jsonState, newState, Charsets.UTF_8);
+            Files.move(newState, statusFile);
         } catch (IOException e) {
             log.error("Unable to write status to {}", statusFile);
         }
