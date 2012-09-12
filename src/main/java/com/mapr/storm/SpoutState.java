@@ -76,7 +76,7 @@ public class SpoutState {
             }
 
             final String jsonState = new Gson().toJson(new SpoutState(scanner, offsets));
-            final File newState = new File(statusFile.getParentFile(), String.format("%06x", new Random().nextInt()));
+            final File newState = new File(statusFile.getParentFile(), String.format("%s-%06x", statusFile.getName(), new Random().nextInt()));
             Files.write(jsonState, newState, Charsets.UTF_8);
             Files.move(newState, statusFile);
         } catch (IOException e) {
