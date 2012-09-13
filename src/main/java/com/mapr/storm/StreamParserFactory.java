@@ -1,4 +1,4 @@
-package com.mapr.com.mapr.storm;
+package com.mapr.storm;
 
 import java.io.FileInputStream;
 import java.util.List;

@@ -1,4 +1,4 @@
-package com.mapr.com.mapr.storm;
+package com.mapr.storm;
 
 import backtype.storm.topology.OutputFieldsDeclarer;
 
@@ -19,5 +19,4 @@ import java.util.List;
 public abstract class StreamParser {
     public abstract long currentOffset();
     public abstract List<Object> nextRecord();
-    public abstract void declareOutputFields(OutputFieldsDeclarer declarer);
 }

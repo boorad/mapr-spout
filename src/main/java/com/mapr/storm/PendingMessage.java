@@ -7,9 +7,9 @@ import java.util.List;
 * In reliable mode, PendingMessage objects record messages that haven't been ack'ed.
 */
 public class PendingMessage {
-    File logFile;
-    long offset;
-    List<Object> tuple;
+    private File logFile;
+    private long offset;
+    private List<Object> tuple;
 
     public PendingMessage(File logFile, long offset, List<Object> tuple) {
         this.logFile = logFile;

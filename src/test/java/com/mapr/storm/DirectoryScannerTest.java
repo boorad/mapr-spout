@@ -1,12 +1,14 @@
-package com.mapr.com.mapr.storm;
+package com.mapr.storm;
 
 import com.google.common.base.Charsets;
 import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
+import junit.framework.Assert;
 import org.junit.After;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
@@ -47,11 +49,11 @@ public class DirectoryScannerTest {
         assertEquals("[4, 5, 6]", lines2.toString());
 
         // verify that we get empty records for a bit
-        List<String> empty = CharStreams.readLines(new InputStreamReader(scanner.nextInput()));
-        assertEquals(0, empty.size());
+        FileInputStream in = scanner.nextInput();
+        Assert.assertNull(in);
 
-        empty = CharStreams.readLines(new InputStreamReader(scanner.nextInput()));
-        assertEquals(0, empty.size());
+        in = scanner.nextInput();
+        Assert.assertNull(in);
 
         // add another file
         Files.append("7\n8\n", new File(tempDir, "x-3"), Charsets.UTF_8);
@@ -63,14 +65,14 @@ public class DirectoryScannerTest {
         // delete an old file without a problem
         new File(tempDir, "x-1").delete();
 
-        empty = CharStreams.readLines(new InputStreamReader(scanner.nextInput()));
-        assertEquals(0, empty.size());
+        in = scanner.nextInput();
+        Assert.assertNull(in);
 
         // add a file that doesn't match the pattern without impact
         Files.append("9\n10\n", new File(tempDir, "y-1"), Charsets.UTF_8);
 
-        empty = CharStreams.readLines(new InputStreamReader(scanner.nextInput()));
-        assertEquals(0, empty.size());
+        in = scanner.nextInput();
+        Assert.assertNull(in);
 
         // out of order collation
         Files.append("9\n10\n", new File(tempDir, "x-10"), Charsets.UTF_8);

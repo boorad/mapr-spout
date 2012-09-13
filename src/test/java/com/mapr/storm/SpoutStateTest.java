@@ -5,8 +5,6 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
-import com.mapr.com.mapr.storm.DirectoryScanner;
-import com.mapr.com.mapr.storm.StreamParser;
 import org.junit.After;
 import org.junit.Test;
 
@@ -78,11 +76,6 @@ public class SpoutStateTest {
 
         @Override
         public List<Object> nextRecord() {
-            throw new UnsupportedOperationException("Default operation");
-        }
-
-        @Override
-        public void declareOutputFields(OutputFieldsDeclarer declarer) {
             throw new UnsupportedOperationException("Default operation");
         }
     }

@@ -1,4 +1,4 @@
-package com.mapr.com.mapr.storm;
+package com.mapr.storm;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
