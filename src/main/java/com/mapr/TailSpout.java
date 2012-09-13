@@ -2,8 +2,8 @@ package com.mapr;
 
 import backtype.storm.spout.SpoutOutputCollector;
 import backtype.storm.task.TopologyContext;
-import backtype.storm.topology.IRichSpout;
 import backtype.storm.topology.OutputFieldsDeclarer;
+import backtype.storm.topology.base.BaseRichSpout;
 import backtype.storm.tuple.Fields;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -50,10 +50,9 @@ import java.util.regex.Pattern;
  * the offsets for unacked transactions.  This would be good during orderly shutdowns, but very
  * bad in the event of an unorderly shutdown.
  */
-public class TailSpout implements IRichSpout {
+public class TailSpout extends BaseRichSpout {
     private final Logger log = LoggerFactory.getLogger(TailSpout.class);
 
-    // these fields are saved and restored on restart.
     private DirectoryScanner scanner;
     private FileInputStream currentInput = null;
 
@@ -68,11 +67,15 @@ public class TailSpout implements IRichSpout {
     private long messageId = 0;
 
     // how often should we save our state?
-    private long checkPointInterval = 100;
+    private long tuplesPerCheckpoint = 100;
+
+    // time between forced checkpoints in seconds
+    private double checkPointIntervalSeconds = 1.0;
     private Queue<PendingMessage> pendingReplays = Lists.newLinkedList();
 
     private StreamParser parser = null;
     private SpoutOutputCollector collector;
+    private double nextCheckPointTime = 0;
 
     public TailSpout(StreamParserFactory factory, File statusFile) throws IOException {
         this.factory = factory;
@@ -91,18 +94,17 @@ public class TailSpout implements IRichSpout {
         return old;
     }
 
-    public void setCheckPointInterval(long checkPointInterval) {
-        this.checkPointInterval = checkPointInterval;
+    public void setTuplesPerCheckpoint(long tuplesPerCheckpoint) {
+        this.tuplesPerCheckpoint = tuplesPerCheckpoint;
+    }
+
+    public void setCheckPointIntervalSeconds(double checkPointIntervalSeconds) {
+        this.checkPointIntervalSeconds = checkPointIntervalSeconds;
     }
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer outputFieldsDeclarer) {
         outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
-    }
-
-    @Override
-    public Map<String, Object> getComponentConfiguration() {
-        throw new UnsupportedOperationException("Default operation");
     }
 
     @Override
@@ -113,12 +115,7 @@ public class TailSpout implements IRichSpout {
 
     @Override
     public void close() {
-        throw new UnsupportedOperationException("Default operation");
-    }
-
-    @Override
-    public void activate() {
-        throw new UnsupportedOperationException("Default operation");
+        SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
     }
 
     @Override
@@ -165,9 +162,11 @@ public class TailSpout implements IRichSpout {
                 } else {
                     collector.emit(r);
                 }
-                if (messageId % checkPointInterval == 0) {
+                if (messageId % tuplesPerCheckpoint == 0 || System.nanoTime() / 1e9 > nextCheckPointTime) {
                     SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
+                    nextCheckPointTime = System.nanoTime() / 1e9 + checkPointIntervalSeconds;
                 }
+                break;
             }
         }
         // exit only when all files have been processed completely
@@ -194,7 +193,7 @@ public class TailSpout implements IRichSpout {
     public void ack(Object messageId) {
         if (messageId instanceof Long) {
             if (ackBuffer.remove(messageId) == null) {
-                log.error("Invalid messageId {}", messageId);
+                log.error("Unknown messageId {}", messageId);
             }
         } else {
             log.error("Incorrect message id {}", messageId);
@@ -208,7 +207,7 @@ public class TailSpout implements IRichSpout {
             if (message != null) {
                 collector.emit(message.getTuple(), messageId);
             } else {
-                log.error("Incorrect message id {}", messageId);
+                log.error("Unknown message id {}", messageId);
             }
         } else {
             log.error("Incorrect message id {}", messageId);

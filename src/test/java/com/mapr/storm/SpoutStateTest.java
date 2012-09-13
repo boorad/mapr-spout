@@ -4,7 +4,6 @@ import backtype.storm.topology.OutputFieldsDeclarer;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
 import com.mapr.com.mapr.storm.DirectoryScanner;
 import com.mapr.com.mapr.storm.StreamParser;
@@ -45,7 +44,6 @@ public class SpoutStateTest {
         scanner.forceInput(logFile, 2);
 
         SpoutState.recordCurrentState(emptyAcks, scanner, new FakeParser(), statusFile);
-        String r = CharStreams.toString(Files.newReaderSupplier(statusFile, Charsets.UTF_8));
         SpoutState rs = SpoutState.fromString(Files.toString(statusFile, Charsets.UTF_8));
         assertEquals(0, rs.getOldFiles().size());
         assertEquals(1, rs.getOffsets().size());
@@ -55,9 +53,11 @@ public class SpoutStateTest {
         assertEquals(".*\\.log", rs.getFilePattern().toString());
 
         Queue<PendingMessage> q = Lists.newLinkedList();
-        DirectoryScanner s2 = SpoutState.restoreState(q, statusFile);        assertEquals(1, q.size());
-        System.out.printf("s2=%s\n", s2);
-
+        DirectoryScanner s2 = SpoutState.restoreState(q, statusFile);
+        assertEquals(1, q.size());
+        assertEquals(0, s2.getOldFiles().size());
+        assertEquals(scanner.getFileNamePattern().toString(), s2.getFileNamePattern().toString());
+        assertEquals(scanner.getInputDirectory().toString(), s2.getInputDirectory().toString());
     }
 
     @After

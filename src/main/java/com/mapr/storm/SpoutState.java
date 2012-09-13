@@ -80,13 +80,12 @@ public class SpoutState {
             Files.write(jsonState, newState, Charsets.UTF_8);
             Files.move(newState, statusFile);
         } catch (IOException e) {
-            log.error("Unable to write status to {}", statusFile);
+            log.error(String.format("Unable to write status to %s", statusFile), e);
         }
     }
 
     public static DirectoryScanner restoreState(Queue<PendingMessage> pendingReplays, File statusFile) throws IOException {
         SpoutState s = SpoutState.fromString(Files.toString(statusFile, Charsets.UTF_8));
-
         DirectoryScanner scanner = new DirectoryScanner(new File(s.inputDirectory), Pattern.compile(s.filePattern));
 
         // we always reset all of the old replays.  Even in reliable = false cases,
