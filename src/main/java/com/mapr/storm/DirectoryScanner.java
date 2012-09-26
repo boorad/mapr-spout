@@ -1,21 +1,23 @@
 package com.mapr.storm;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Queues;
-import com.google.common.collect.Sets;
-import com.google.common.io.Closeables;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Queues;
+import com.google.common.collect.Sets;
+import com.google.common.io.Closeables;
 
 /**
  * Scans through files in a directory as they appear.
@@ -30,8 +32,11 @@ import java.util.regex.Pattern;
  * gives you an infinite sequence of input streams whose concatenation is the concatenation
  * of all the files that have ever appeared in this directory.
  */
-public class DirectoryScanner {
-    private Logger log = LoggerFactory.getLogger(DirectoryScanner.class);
+public class DirectoryScanner implements Serializable {
+
+	private static final long serialVersionUID = -8743538912863486122L;
+
+	private Logger log = LoggerFactory.getLogger(DirectoryScanner.class);
 
     private final File inputDirectory;
     private final Pattern fileNamePattern;
