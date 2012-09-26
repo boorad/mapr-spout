@@ -120,6 +120,7 @@ public class TailSpout extends BaseRichSpout {
 			SpoutOutputCollector collector) {
 		this.collector = collector;
 		currentInput = scanner.nextInput();
+		parser = factory.createParser(currentInput);
 	}
 
 	@Override
