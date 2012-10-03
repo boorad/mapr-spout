@@ -115,12 +115,11 @@ public class TailSpout extends BaseRichSpout {
 		outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
 	}
 
+	@SuppressWarnings("rawtypes")
 	@Override
 	public void open(Map map, TopologyContext context,
 			SpoutOutputCollector collector) {
 		this.collector = collector;
-		currentInput = scanner.nextInput();
-		parser = factory.createParser(currentInput);
 	}
 
 	@Override
