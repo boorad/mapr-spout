@@ -14,12 +14,24 @@ When running in reliable mode, tuples are held in memory until they are acknowle
 For right now, there is no driver for the spout.  All that is in place and tested are the DirectoryScanner and the 
 SpoutState classes.
 
+Data Collection Architecture
+==========
+
+- data collection will be via an API similar to (if not identical to) Kafka's.  The client should be able to interrogate Zookeeper to find the current live data collector
+
+- there will be a fail-over data collector process that appends to the data files
+
+- disorderly fail-over of the collector will result in a few seconds of data loss.  Orderly fail-over should not result in any data loss
+
+- processing of data will be via a Storm spout or a map-reduce batch process that reads a snapshot of the data
+
+- the system will work on local files but will require MapR for failure tolerance
+
+
 Missing bits
 ==========
 
 I haven't written any parsers yet.  Such an exercise might expose some interesting problems.
-
-We should have a per call limit to the number of tuples that we emit per call to nextTuple().  
 
 Likewise, we should have a couple of different strategies to handle the situation when there are lots of pending 
 tuples.  One strategy is to simply drop tuples if we have too many pending tuples.  Another strategy is to only emit 
