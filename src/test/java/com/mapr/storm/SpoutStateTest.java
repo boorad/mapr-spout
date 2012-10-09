@@ -1,12 +1,6 @@
 package com.mapr.storm;
 
-import backtype.storm.topology.OutputFieldsDeclarer;
-import com.google.common.base.Charsets;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.io.Files;
-import org.junit.After;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
@@ -15,7 +9,13 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
+import org.junit.After;
+import org.junit.Test;
+
+import com.google.common.base.Charsets;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.io.Files;
 
 /**
  * Test state handling.
