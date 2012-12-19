@@ -13,11 +13,7 @@ import java.io.IOException;
 import java.util.concurrent.Executors;
 
 /**
-* Created with IntelliJ IDEA.
-* User: tdunning
-* Date: 12/18/12
-* Time: 3:43 PM
-* To change this template use File | Settings | File Templates.
+* Handles connecting to a server with standard options.
 */
 class CatcherConnection {
     private final Logger logger = LoggerFactory.getLogger(CatcherConnection.class);

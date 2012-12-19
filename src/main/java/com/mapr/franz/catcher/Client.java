@@ -1,15 +1,7 @@
 package com.mapr.franz.catcher;
 
 import com.google.common.base.Charsets;
-import com.google.common.collect.ConcurrentHashMultiset;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Multimaps;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Sets;
+import com.google.common.collect.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
@@ -21,6 +13,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,7 +39,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p/>
  * If a log request results in an error, we try to get rid of the connection that caused
  * us this grief.  This might ultimately cause us to forget a host or even a cache entry,
- * but we will attempt to re-open these connections later.
+ * but we will attempt to re-open these connections later, usually due to a referral back
+ * to that host.  During server cloud reorganizations, we may not re-open the same server.
  */
 public class Client {
     private static final int MAX_SERVER_RETRIES_BEFORE_BLACKLISTING = 4;
@@ -87,10 +81,33 @@ public class Client {
 
     // TODO should periodically attempt to reconnect to any of these that have gotten lost
     // collects all of the servers we have tried to connect with
-    private final Set<PeerInfo> allKnownServers = new ConcurrentSkipListSet<PeerInfo>();
+    private final Set<PeerInfo> allKnownServers = new ConcurrentSkipListSet<PeerInfo>(new Comparator<PeerInfo>() {
+        @Override
+        public int compare(PeerInfo p1, PeerInfo p2) {
+            int r1 = p1.getHostName().compareTo(p2.getHostName());
+            if (r1 == 0) {
+                return p1.getPort() - p2.getPort();
+            } else {
+                return r1;
+            }
+        }
+    });
 
     // how many messages has this Client sent (used to generate message UUID)
     private AtomicLong messageCount = new AtomicLong(0);
+
+
+    private void close() {
+        for (CatcherConnection connection : allConnections) {
+            connection.close();
+        }
+        allConnections.clear();
+        topicMap.clear();
+        hostConnections.clear();
+        knownServers.clear();
+        serverBlackList.clear();
+    }
+
 
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
         // SecureRandom can cause delays if over-used.  Pulling 8 bytes shouldn't be a big deal.
@@ -264,11 +281,13 @@ public class Client {
         }
     }
 
+
     public static void main(String[] args) throws ServiceException, IOException {
-        CatcherConnection s = new CatcherConnection(new PeerInfo("server", 8080));
+        Client c = new Client(ImmutableList.of(new PeerInfo("localhost", 8080)));
 
-        s.close();
+        c.sendMessage("this", "hello world");
 
+        c.close();
     }
 
 }
