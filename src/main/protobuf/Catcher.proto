@@ -6,51 +6,53 @@ option java_outer_classname = "Catcher";
 
 // gets a current list of servers
 message Hello {
-    required string application = 1;  // application name for logging purposes
-    required int64 uuid = 2;         // client id, again for logging
+    optional uint64 clientId = 1;      // client id for logging
+    optional string application = 2;  // application name for logging purposes
 }
 
 message HelloResponse {
-    required int64 serverId = 1;
+    optional uint64 serverId = 1;
     repeated Host host = 2;
 }
 
 // sends a message to a topic
 message LogMessage {
-    required int64 uuid = 1;
-    required string topic = 2;
-    required bytes payload = 3;
+    optional uint64 clientId = 1;
+    optional string topic = 2;
+    optional bytes payload = 3;
 }
 
 // the response includes one or more redirects for the next time
 message LogMessageResponse {
-    required bool successful = 1;
-    optional string backTrace = 2;
-    optional TopicMapping redirect = 3;
+    optional uint64 serverId = 1;
+    optional bool successful = 2;
+    optional string backTrace = 3;
+    optional TopicMapping redirect = 4;
 }
 
 // signs off ... mostly for logging purposes
 message Close {
-    required int64 uuid = 1;
+    optional uint64 clientId = 1;
 }
 
 message CloseResponse {
+    optional uint64 serverId = 1;
 }
 
 // message components
 message TopicMapping {
-    required string topic = 1;
-    required int64 serverId = 2;
+    optional string topic = 1;
+    optional uint64 serverId = 2;
     repeated Host host = 3;
 }
 
 message Host {
     optional string hostName = 2;
-    required int32 port = 3;
+    optional uint32 port = 3;
 }
 
 message Status {
-	required string message = 1;
+	optional string message = 1;
 }
 
 // the service itself

@@ -1,7 +1,16 @@
 package com.mapr.franz.catcher;
 
 import com.google.common.base.Charsets;
-import com.google.common.collect.*;
+import com.google.common.collect.ConcurrentHashMultiset;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Multiset;
+import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
@@ -13,11 +22,11 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Collection;
-import java.util.Comparator;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -67,7 +76,7 @@ public class Client {
     // history of all connections
     // this is retained so that we can be sure to call close on everything that we
     // ever open.
-    private Set<CatcherConnection> allConnections = new ConcurrentSkipListSet<CatcherConnection>();
+    private Set<CatcherConnection> allConnections = Collections.newSetFromMap(new ConcurrentHashMap<CatcherConnection, Boolean>());
 
     // history of all host,port => server mappings.  Useful for reverse engineering in failure modes
     private Map<PeerInfo, Long> knownServers = Maps.newConcurrentMap();
@@ -81,33 +90,10 @@ public class Client {
 
     // TODO should periodically attempt to reconnect to any of these that have gotten lost
     // collects all of the servers we have tried to connect with
-    private final Set<PeerInfo> allKnownServers = new ConcurrentSkipListSet<PeerInfo>(new Comparator<PeerInfo>() {
-        @Override
-        public int compare(PeerInfo p1, PeerInfo p2) {
-            int r1 = p1.getHostName().compareTo(p2.getHostName());
-            if (r1 == 0) {
-                return p1.getPort() - p2.getPort();
-            } else {
-                return r1;
-            }
-        }
-    });
+    private final Set<PeerInfo> allKnownServers = Collections.newSetFromMap(new ConcurrentHashMap<PeerInfo, Boolean>());
 
     // how many messages has this Client sent (used to generate message UUID)
     private AtomicLong messageCount = new AtomicLong(0);
-
-
-    private void close() {
-        for (CatcherConnection connection : allConnections) {
-            connection.close();
-        }
-        allConnections.clear();
-        topicMap.clear();
-        hostConnections.clear();
-        knownServers.clear();
-        serverBlackList.clear();
-    }
-
 
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
         // SecureRandom can cause delays if over-used.  Pulling 8 bytes shouldn't be a big deal.
@@ -149,6 +135,7 @@ public class Client {
             }
         }
         if (servers.size() == 0 && allConnections.isEmpty()) {
+            logger.error("No live catchers even after trying to re-open everything");
             throw new IOException("No catcher servers to connect to");
         }
 
@@ -161,7 +148,7 @@ public class Client {
             Catcher.LogMessage request = Catcher.LogMessage.newBuilder()
                     .setTopic(topic)
                             // multiplying by a big prime acts to spread out the bit changes between consecutive messages
-                    .setUuid(myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME))
+                    .setClientId(myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME))
                     .setPayload(ByteString.copyFrom(message))
                     .build();
             try {
@@ -232,6 +219,17 @@ public class Client {
         }
     }
 
+    private void close() {
+        for (CatcherConnection connection : allConnections) {
+            connection.close();
+        }
+        allConnections.clear();
+        topicMap.clear();
+        hostConnections.clear();
+        knownServers.clear();
+        serverBlackList.clear();
+    }
+
     // TODO maybe should do this again against knownServers.keyset() every 30 seconds or so
     private void connectAll(Iterable<PeerInfo> servers) {
         // all of the hosts we have attempted to contact
@@ -244,34 +242,40 @@ public class Client {
             // the novel servers that we hear about during this iteration
             Set<PeerInfo> discovered = Sets.newHashSet();
             Catcher.Hello request = Catcher.Hello.newBuilder()
-                    .setUuid(1)
+                    .setClientId(1)
                     .setApplication("test-client")
                     .build();
             for (PeerInfo server : newServers) {
                 if (!attempted.contains(server)) {
                     try {
                         if (serverBlackList.count(server) < MAX_SERVER_RETRIES_BEFORE_BLACKLISTING) {
+                            logger.debug("Connecting to {}", server);
                             CatcherConnection s = CatcherConnection.connect(server);
-                            Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
+                            if (s != null) {
+                                Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
 
-                            hostConnections.put(r.getServerId(), s);
-                            allConnections.add(s);
-                            knownServers.put(server, r.getServerId());
+                                hostConnections.put(r.getServerId(), s);
+                                allConnections.add(s);
+                                knownServers.put(server, r.getServerId());
 
-                            int n = r.getHostCount();
-                            for (int i = 0; i < n; i++) {
-                                Catcher.Host host = r.getHost(i);
-                                PeerInfo pi = new PeerInfo(host.getHostName(), host.getPort());
-                                if (!attempted.contains(pi)) {
-                                    discovered.add(pi);
+                                int n = r.getHostCount();
+                                for (int i = 0; i < n; i++) {
+                                    Catcher.Host host = r.getHost(i);
+                                    PeerInfo pi = new PeerInfo(host.getHostName(), host.getPort());
+                                    if (!attempted.contains(pi)) {
+                                        discovered.add(pi);
+                                    }
+                                    attempted.add(server);
                                 }
+                            } else {
+                                serverBlackList.add(server);
+                                logger.debug("Cannot connect to {}", server);
                             }
                         }
                     } catch (ServiceException e) {
                         serverBlackList.add(server);
                         logger.warn("Could not connect to server", e);
                     }
-                    attempted.add(server);
                 }
             }
             // this has to be true ... nice to check during testing, though
@@ -280,7 +284,6 @@ public class Client {
             newServers.addAll(discovered);
         }
     }
-
 
     public static void main(String[] args) throws ServiceException, IOException {
         Client c = new Client(ImmutableList.of(new PeerInfo("localhost", 8080)));

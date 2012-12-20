@@ -4,7 +4,6 @@ import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
 import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
 import com.googlecode.protobuf.pro.duplex.listener.TcpConnectionEventListener;
-import com.googlecode.protobuf.pro.duplex.logging.CategoryPerServiceLogger;
 import com.googlecode.protobuf.pro.duplex.server.DuplexTcpServerBootstrap;
 import com.mapr.franz.catcher.wire.Catcher;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
@@ -35,10 +34,10 @@ public class Server {
 
 
         // set up request logging
-        final CategoryPerServiceLogger logPolicy = new CategoryPerServiceLogger();
-        logPolicy.setLogRequestProto(true);
-        logPolicy.setLogResponseProto(true);
-        bootstrap.setLogger(logPolicy);
+//        final CategoryPerServiceLogger logPolicy = new CategoryPerServiceLogger();
+//        logPolicy.setLogRequestProto(true);
+//        logPolicy.setLogResponseProto(true);
+//        bootstrap.setLogger(logPolicy);
 
         //Finally binding the bootstrap to the TCP port will start off the socket accepting and clients can start to connect.
         bootstrap.getRpcServiceRegistry().registerBlockingService(Catcher.CatcherService.newReflectiveBlockingService(new CatcherServiceImpl()));
