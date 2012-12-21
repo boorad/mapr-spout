@@ -1,16 +1,8 @@
 package com.mapr.franz.catcher;
 
 import com.google.common.base.Charsets;
-import com.google.common.collect.ConcurrentHashMultiset;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Multimaps;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Sets;
+import com.google.common.base.Function;
+import com.google.common.collect.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
@@ -79,18 +71,18 @@ public class Client {
     private Set<CatcherConnection> allConnections = Collections.newSetFromMap(new ConcurrentHashMap<CatcherConnection, Boolean>());
 
     // history of all host,port => server mappings.  Useful for reverse engineering in failure modes
-    private Map<PeerInfo, Long> knownServers = Maps.newConcurrentMap();
+    private Map<HostPort, Long> knownServers = Maps.newConcurrentMap();
 
     // TODO should reset this periodically so we try servers again in case network is repaired
     // list of server connections that have been persistently bad which we now ignore
-    private Multiset<PeerInfo> serverBlackList = ConcurrentHashMultiset.create();
+    private Multiset<HostPort > serverBlackList = ConcurrentHashMultiset.create();
 
     // TODO should decrement this periodically so that we start trying to handle redirects again
     private volatile int redirectCount = 0;
 
     // TODO should periodically attempt to reconnect to any of these that have gotten lost
     // collects all of the servers we have tried to connect with
-    private final Set<PeerInfo> allKnownServers = Collections.newSetFromMap(new ConcurrentHashMap<PeerInfo, Boolean>());
+    private final Set<HostPort > allKnownServers = Collections.newSetFromMap(new ConcurrentHashMap<HostPort , Boolean>());
 
     // how many messages has this Client sent (used to generate message UUID)
     private AtomicLong messageCount = new AtomicLong(0);
@@ -98,7 +90,12 @@ public class Client {
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
         // SecureRandom can cause delays if over-used.  Pulling 8 bytes shouldn't be a big deal.
         this.myUniqueId = new SecureRandom().nextLong();
-        connectAll(servers);
+        connectAll(Iterables.transform(servers, new Function<PeerInfo, HostPort>() {
+            @Override
+            public HostPort apply(PeerInfo input) {
+                return new HostPort(input);
+            }
+        }));
     }
 
     public void sendMessage(String topic, String message) throws IOException, ServiceException {
@@ -163,10 +160,10 @@ public class Client {
                             Catcher.TopicMapping redirect = r.getRedirect();
 
                             // connect to all possible address of this redirected host
-                            List<PeerInfo> newHosts = Lists.newArrayList();
+                            List<HostPort > newHosts = Lists.newArrayList();
                             for (int i = 0; i < redirect.getHostCount(); i++) {
                                 Catcher.Host h = redirect.getHost(i);
-                                newHosts.add(new PeerInfo(h.getHostName(), h.getPort()));
+                                newHosts.add(new HostPort(h.getHostName(), h.getPort()));
                             }
                             connectAll(newHosts);
 
@@ -201,9 +198,9 @@ public class Client {
             allConnections.removeAll(pendingConnectionRemovals);
             for (CatcherConnection connection : pendingConnectionRemovals) {
                 if (preferredServer == null) {
-                    preferredServer = knownServers.get(connection.getServer());
+                    preferredServer = knownServers.get(new HostPort(connection.getServer()));
                     // this should reappear due to a redirect
-                    knownServers.remove(connection.getServer());
+                    knownServers.remove(new HostPort(connection.getServer()));
                 }
 
                 if (preferredServer != null) {
@@ -233,26 +230,26 @@ public class Client {
     }
 
     // TODO maybe should do this again against knownServers.keyset() every 30 seconds or so
-    private void connectAll(Iterable<PeerInfo> servers) {
+    private void connectAll(Iterable<HostPort > servers) {
         // all of the hosts we have attempted to contact
-        Set<PeerInfo> attempted = Sets.newHashSet();
+        Set<HostPort > attempted = Sets.newHashSet();
 
         // the ones we are going to try in each iteration
         Iterables.addAll(this.allKnownServers, servers);
-        Set<PeerInfo> newServers = Sets.newHashSet(servers);
+        Set<HostPort > newServers = Sets.newHashSet(servers);
         while (newServers.size() > 0) {
             // the novel servers that we hear about during this iteration
-            Set<PeerInfo> discovered = Sets.newHashSet();
+            Set<HostPort > discovered = Sets.newHashSet();
             Catcher.Hello request = Catcher.Hello.newBuilder()
                     .setClientId(1)
                     .setApplication("test-client")
                     .build();
-            for (PeerInfo server : newServers) {
+            for (HostPort  server : newServers) {
                 if (!attempted.contains(server)) {
                     try {
                         if (serverBlackList.count(server) < MAX_SERVER_RETRIES_BEFORE_BLACKLISTING) {
                             logger.debug("Connecting to {}", server);
-                            CatcherConnection s = CatcherConnection.connect(server);
+                            CatcherConnection s = CatcherConnection.connect(server.asPortInfo());
                             if (s != null) {
                                 Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
 
@@ -263,7 +260,7 @@ public class Client {
                                 int n = r.getHostCount();
                                 for (int i = 0; i < n; i++) {
                                     Catcher.Host host = r.getHost(i);
-                                    PeerInfo pi = new PeerInfo(host.getHostName(), host.getPort());
+                                    HostPort pi = new HostPort(host.getHostName(), host.getPort());
                                     if (!attempted.contains(pi)) {
                                         discovered.add(pi);
                                     }
@@ -284,6 +281,40 @@ public class Client {
             assert Sets.intersection(discovered, attempted).size() == 0;
             newServers.clear();
             newServers.addAll(discovered);
+        }
+    }
+
+    private static class HostPort {
+        private String host;
+        private int port;
+
+        private HostPort(String host, int port) {
+            this.host = host;
+            this.port = port;
+        }
+
+        public HostPort(PeerInfo server) {
+            this(server.getHostName(), server.getPort());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof HostPort)) return false;
+
+            HostPort hostPort = (HostPort) o;
+            return port == hostPort.port && host.equals(hostPort.host);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = host.hashCode();
+            result = 31 * result + port;
+            return result;
+        }
+
+        public PeerInfo asPortInfo() {
+            return new PeerInfo(host, port);
         }
     }
 
