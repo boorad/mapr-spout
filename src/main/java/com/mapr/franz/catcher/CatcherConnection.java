@@ -71,7 +71,12 @@ class CatcherConnection {
     }
 
     public void close() {
-        channel.close();
-        bootstrap.releaseExternalResources();
+        // these can be null in mocked versions of this class
+        if (channel != null) {
+            channel.close();
+        }
+        if (bootstrap != null) {
+            bootstrap.releaseExternalResources();
+        }
     }
 }

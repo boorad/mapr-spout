@@ -182,6 +182,8 @@ public class Client {
                             }
                             redirectCount++;
                         }
+                    } else {
+                        redirectCount = 0;
                     }
                 } else {
                     throw new IOException(r.getBackTrace());
@@ -219,7 +221,7 @@ public class Client {
         }
     }
 
-    private void close() {
+    public void close() {
         for (CatcherConnection connection : allConnections) {
             connection.close();
         }
