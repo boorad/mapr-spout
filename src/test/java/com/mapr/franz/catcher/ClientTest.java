@@ -2,13 +2,13 @@ package com.mapr.franz.catcher;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.mapr.franz.catcher.wire.Catcher;
 import mockit.Mock;
 import mockit.MockUp;
-import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,23 +17,20 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 public class ClientTest {
     // check for failure if we can't get to any server
     @Test
     public void noServer() throws ServiceException, IOException {
-        new MockUp<CatcherConnection>() {
-            @Mock
-            public CatcherConnection connect(PeerInfo ignore) {
+        Client c = new Client(new ConnectionFactory() {
+            @Override
+            public CatcherConnection create(PeerInfo server) {
                 return null;
             }
-        };
-
-        Client c = new Client(Lists.newArrayList(new PeerInfo("foo", 0)));
+        }, Lists.newArrayList(new PeerInfo("foo", 0)));
         try {
             c.sendMessage("topic", "message");
             fail("Should have failed with IOException");
@@ -45,78 +42,56 @@ public class ClientTest {
     // check that we try a second time and that we get a good result the second time
     @Test
     public void oneServerRetry() throws ServiceException, IOException {
-        final List<String> messages = Lists.newArrayList();
-        new MockUp<CatcherConnection>() {
+        final ServerFarm farm = new ServerFarm();
+        Client c = new Client(new ConnectionFactory() {
             int attempt = 0;
 
-            @Mock
-            public void $init(PeerInfo server) {
-                Assert.assertNotNull(server);
-            }
-
-            @Mock
-            public CatcherConnection connect(PeerInfo server) throws IOException {
+            @Override
+            public CatcherConnection create(PeerInfo server) throws IOException {
                 if (attempt++ == 0) {
+                    // first try fails
                     return null;
                 } else {
-                    return new CatcherConnection(server);
+                    // second retry works
+                    return new FakeConnection() {
+                        public Catcher.CatcherService.BlockingInterface getService() {
+                            return new BasicServer(new SecureRandom().nextLong(), farm);
+                        }
+                    };
                 }
             }
+        }, Lists.newArrayList(new PeerInfo("foo", 0)));
 
-            @Mock
-            public Catcher.CatcherService.BlockingInterface getService() {
-                return new Catcher.CatcherService.BlockingInterface() {
-                    private final long id = new SecureRandom().nextLong();
-
-                    @Override
-                    public Catcher.HelloResponse hello(RpcController controller, Catcher.Hello request) throws ServiceException {
-                        return Catcher.HelloResponse
-                                .newBuilder().setServerId(id)
-                                .build();
-                    }
-
-                    @Override
-                    public Catcher.LogMessageResponse log(RpcController controller, Catcher.LogMessage request) throws ServiceException {
-                        Preconditions.checkArgument(request.hasPayload());
-                        messages.add(request.getPayload().toStringUtf8());
-
-                        return Catcher.LogMessageResponse.newBuilder()
-                                .setServerId(id)
-                                .setSuccessful(true)
-                                .build();
-                    }
-
-                    @Override
-                    public Catcher.CloseResponse close(RpcController controller, Catcher.Close request) throws ServiceException {
-                        throw new UnsupportedOperationException("Default operation");
-                    }
-                };
-            }
-        };
-
-        Client c = new Client(Lists.newArrayList(new PeerInfo("foo", 0)));
         c.sendMessage("topic", "message");
-        assertEquals(1, messages.size());
-        assertEquals("message", messages.get(0));
+        assertEquals(1, farm.getMessages().size());
+        assertEquals("message", farm.getMessages().get(0));
     }
 
-
-    // verifies redirects are respected by the client
+    // verifies redirects are remembered by the client
+    // also verifies that server failures are dealt with only a few redirects
     @Test
     public void redirects() throws ServiceException, IOException {
         final ServerFarm farm = new ServerFarm();
+        final Map<CatcherConnection, FarmedServer> servermap = Maps.newHashMap();
+        final Map<CatcherConnection, PeerInfo> hostmap = Maps.newHashMap();
 
-        new MockUp<CatcherConnection>() {
-            public FarmedServer server;
+        new MockUp<RealCatcherConnection>() {
+            CatcherConnection it;
 
-            @Mock
-            public void $init(PeerInfo host) {
-                server = farm.newServer();
+            @Mock(maxInvocations = 10)
+            public void $init(PeerInfo host1) {
+                servermap.put(it, farm.newServer());
+                hostmap.put(it, host1);
             }
 
             @Mock
             public Catcher.CatcherService.BlockingInterface getService() {
-                return server;
+                return servermap.get(it);
+            }
+
+            @Mock
+            public String toString() {
+                return "MockConnection(" + hostmap.get(it) + ")";
             }
         };
 
@@ -127,19 +102,34 @@ public class ClientTest {
 
         Client c = new Client(hosts);
 
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 1000; i++) {
+            int topic = i % 31;
+            c.sendMessage(Integer.toString(topic), "message " + i);
+        }
+        assertEquals(1000, farm.messageCount);
+        int firstPassRedirects = farm.redirectCount;
+        assertTrue("Should have few redirects", firstPassRedirects < 31);
+        assertEquals(10, farm.helloCount);
+
+        FarmedServer x = farm.servers.remove(farm.servers.size() - 1);
+        x.emulateServerFailure();
+
+        for (int i = 0; i < 1000; i++) {
             int topic = i % 31;
             c.sendMessage(Integer.toString(topic), "message " + i);
         }
 
+        assertEquals(2000, farm.messageCount);
+        assertTrue("Should have few redirects", farm.redirectCount - firstPassRedirects < 31);
+        assertEquals(10, farm.helloCount);
+
         c.close();
 
-        assertEquals(10000, farm.messageCount);
-        assertTrue("Should have few redirects", farm.redirectCount < 35);
-        assertEquals(10, farm.helloCount);
-        assertEquals(10, farm.closeCount);
     }
 
+    /**
+     * Keeps track of a bunch of FarmedServer's and the associated transaction counts.
+     */
     private static class ServerFarm implements Iterable<FarmedServer> {
         private Logger logger = LoggerFactory.getLogger(String.class);
 
@@ -147,7 +137,7 @@ public class ClientTest {
         private int redirectCount = 0;
         private int messageCount = 0;
         private int helloCount = 0;
-        private int closeCount = 0;
+        final List<String> messages = Lists.newArrayList();
 
         public FarmedServer newServer() {
             FarmedServer r = new FarmedServer(servers.size(), this);
@@ -166,11 +156,11 @@ public class ClientTest {
 
         public void notifyClose(long id) {
             logger.debug("Closing {}", id);
-            closeCount++;
         }
 
-        public void notifyMessage(long id, int topic) {
+        public void notifyMessage(long id, String topic, String message) {
             logger.debug("Message received at {} on topic {}", id, topic);
+            messages.add(message);
             messageCount++;
         }
 
@@ -183,19 +173,28 @@ public class ClientTest {
         public Iterator<FarmedServer> iterator() {
             return servers.iterator();
         }
+
+        public List<String> getMessages() {
+            return messages;
+        }
     }
 
-    private static class FarmedServer implements Catcher.CatcherService.BlockingInterface {
+    /**
+     * Emulates minimal server function and allows emulation of failures.
+     */
+    private static class BasicServer implements Catcher.CatcherService.BlockingInterface {
         private final long id;
         private final ServerFarm farm;
+        private boolean isDead = false;
 
-        private FarmedServer(long id, ServerFarm farm) {
+        private BasicServer(long id, ServerFarm farm) {
             this.id = id;
             this.farm = farm;
         }
 
         @Override
         public Catcher.HelloResponse hello(RpcController controller, Catcher.Hello request) throws ServiceException {
+            checkForFailure();
             farm.notifyHello(id);
 
             return Catcher.HelloResponse
@@ -206,18 +205,69 @@ public class ClientTest {
         @Override
         public Catcher.LogMessageResponse log(RpcController controller, Catcher.LogMessage request) throws ServiceException {
             Preconditions.checkArgument(request.hasPayload());
+            checkForFailure();
 
-            int topic = Integer.parseInt(request.getTopic());
-            farm.notifyMessage(id, topic);
+            String topic = request.getTopic();
+            farm.notifyMessage(id, topic, request.getPayload().toStringUtf8());
+
             Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse.newBuilder()
                     .setServerId(id)
                     .setSuccessful(true);
+            return r.build();
+        }
 
-            int redirectTo = topic % farm.size();
-            if (redirectTo != id) {
-                farm.notifyRedirect(id, redirectTo);
+        public void checkForFailure() throws ServiceException {
+            if (isDead) {
+                throw new ServiceException("Simulated server shutdown");
+            }
+        }
+
+        @Override
+        public Catcher.CloseResponse close(RpcController controller, Catcher.Close request) throws ServiceException {
+            checkForFailure();
+            farm.notifyClose(id);
+            return Catcher.CloseResponse.newBuilder().setServerId(id).build();
+        }
+
+        public ServerFarm getFarm() {
+            return farm;
+        }
+
+        public long getId() {
+
+            return id;
+        }
+
+        public void emulateServerFailure() {
+            isDead = true;
+        }
+    }
+
+    /**
+     * Emulates topic redirection.
+     */
+    private static class FarmedServer extends BasicServer {
+        private FarmedServer(long id, ServerFarm farm) {
+            super(id, farm);
+        }
+
+        @Override
+        public Catcher.LogMessageResponse log(RpcController controller, Catcher.LogMessage request) throws ServiceException {
+            Preconditions.checkArgument(request.hasPayload());
+            checkForFailure();
+
+            String topic = request.getTopic();
+            int topicNumber = Integer.parseInt(topic);
+            getFarm().notifyMessage(getId(), topic, request.getPayload().toStringUtf8());
+            Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse.newBuilder()
+                    .setServerId(getId())
+                    .setSuccessful(true);
+
+            int redirectTo = topicNumber % getFarm().size();
+            if (redirectTo != getId()) {
+                getFarm().notifyRedirect(getId(), redirectTo);
                 Catcher.TopicMapping.Builder redirect = r.getRedirectBuilder();
-                redirect.setTopic(Integer.toString(redirectTo));
+                redirect.setTopic(Integer.toString(topicNumber));
                 redirect.setServerId(redirectTo);
                 redirect.addHostBuilder()
                         .setHostName(Long.toString(redirectTo))
@@ -226,15 +276,8 @@ public class ClientTest {
             }
             return r.build();
         }
-
-        @Override
-        public Catcher.CloseResponse close(RpcController controller, Catcher.Close request) throws ServiceException {
-            farm.notifyClose(id);
-            return Catcher.CloseResponse.newBuilder().setServerId(id).build();
-        }
     }
 
-    // TODO single server log message works right
     // TODO two server topic redirects work correctly (two servers, 100 requests on 10 topics, each topic has at most 1 request to wrong server)
     // TODO three server connect, cluster shrinks, send remaining topics to remaining nodes, minimal redirects
     // TODO three server connect, cluster shrinks, then expands, minimal redirects

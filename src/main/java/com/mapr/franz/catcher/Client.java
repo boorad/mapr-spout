@@ -48,6 +48,9 @@ public class Client {
     private static final int MAX_REDIRECTS_BEFORE_LIVING_WITH_INDIRECTS = 100;
 
     private final Logger logger = LoggerFactory.getLogger(Client.class);
+
+    private final ConnectionFactory connector;
+
     private final long myUniqueId;
     private static final long BIG_PRIME = 213887370601841L;
 
@@ -56,7 +59,7 @@ public class Client {
     // will be added and never removed.  Under failure modes, entries may be deleted
     // as well, but the use of an entry that is about to be deleted is not a problem
     // since all that can happen is that an attempt might be made to delete it again.
-    private Map<String, Long> topicMap = Maps.newConcurrentMap();
+    private Map<String, Long> topicMap = Maps.newHashMap();
 
     // mapping from server id to all known connections for that server
     // updates to this race accesses, but this is safe since these should almost
@@ -88,6 +91,11 @@ public class Client {
     private AtomicLong messageCount = new AtomicLong(0);
 
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
+        this(new CatcherConnectionFactory(), servers);
+    }
+    public Client(ConnectionFactory connector, Iterable<PeerInfo> servers) throws IOException, ServiceException {
+        this.connector = connector;
+
         // SecureRandom can cause delays if over-used.  Pulling 8 bytes shouldn't be a big deal.
         this.myUniqueId = new SecureRandom().nextLong();
         connectAll(Iterables.transform(servers, new Function<PeerInfo, HostPort>() {
@@ -205,10 +213,14 @@ public class Client {
 
                 if (preferredServer != null) {
                     // forget any topic mappings for this host
+                    List<String> toRemove = Lists.newArrayList();
                     for (String t : topicMap.keySet()) {
                         if (topicMap.get(t).equals(preferredServer)) {
-                            topicMap.remove(t);
+                            toRemove.add(t);
                         }
+                    }
+                    for (String t : toRemove) {
+                        topicMap.remove(t);
                     }
                     // remove connection that causes an error
                     hostConnections.remove(preferredServer, connection);
@@ -230,7 +242,7 @@ public class Client {
     }
 
     // TODO maybe should do this again against knownServers.keyset() every 30 seconds or so
-    private void connectAll(Iterable<HostPort > servers) {
+    private void connectAll(Iterable<HostPort > servers) throws IOException {
         // all of the hosts we have attempted to contact
         Set<HostPort > attempted = Sets.newHashSet();
 
@@ -239,17 +251,17 @@ public class Client {
         Set<HostPort > newServers = Sets.newHashSet(servers);
         while (newServers.size() > 0) {
             // the novel servers that we hear about during this iteration
-            Set<HostPort > discovered = Sets.newHashSet();
+            Set<HostPort> discovered = Sets.newHashSet();
             Catcher.Hello request = Catcher.Hello.newBuilder()
                     .setClientId(1)
                     .setApplication("test-client")
                     .build();
-            for (HostPort  server : newServers) {
-                if (!attempted.contains(server)) {
+            for (HostPort server : newServers) {
+                if (!attempted.contains(server) && !knownServers.keySet().contains(server)) {
                     try {
                         if (serverBlackList.count(server) < MAX_SERVER_RETRIES_BEFORE_BLACKLISTING) {
                             logger.debug("Connecting to {}", server);
-                            CatcherConnection s = CatcherConnection.connect(server.asPortInfo());
+                            CatcherConnection s = connector.create(server.asPortInfo());
                             if (s != null) {
                                 Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
 
