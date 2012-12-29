@@ -15,20 +15,20 @@ import java.util.concurrent.Executors;
 /**
  * Handles connecting to a server with standard options.
  */
-class RealCatcherConnection implements CatcherConnection {
-    private final Logger logger = LoggerFactory.getLogger(RealCatcherConnection.class);
+class CatcherConnection {
+    private final Logger logger = LoggerFactory.getLogger(CatcherConnection.class);
 
     private final Catcher.CatcherService.BlockingInterface catcherService;
     private final RpcController controller;
     private final DuplexTcpClientBootstrap bootstrap;
     private final RpcClientChannel channel;
-    private final PeerInfo server;
+    private PeerInfo server;
 
     public static CatcherConnection connect(PeerInfo server) {
-        final Logger logger = LoggerFactory.getLogger(RealCatcherConnection.class);
+        final Logger logger = LoggerFactory.getLogger(CatcherConnection.class);
         final CatcherConnection r;
         try {
-            r = new RealCatcherConnection(server);
+            r = new CatcherConnection(server);
         } catch (IOException e) {
             logger.warn("Cannot connect to {}", server, e);
             return null;
@@ -36,7 +36,7 @@ class RealCatcherConnection implements CatcherConnection {
         return r;
     }
 
-    RealCatcherConnection(PeerInfo server) throws IOException {
+    CatcherConnection(PeerInfo server) throws IOException {
         logger.info("Connecting to {}", server);
         this.server = server;
         PeerInfo client = new PeerInfo("clientHostname", 9999);
@@ -58,22 +58,18 @@ class RealCatcherConnection implements CatcherConnection {
         controller = channel.newRpcController();
     }
 
-    @Override
     public Catcher.CatcherService.BlockingInterface getService() {
         return catcherService;
     }
 
-    @Override
     public RpcController getController() {
         return controller;
     }
 
-    @Override
     public PeerInfo getServer() {
         return server;
     }
 
-    @Override
     public void close() {
         // these can be null in mocked versions of this class
         if (channel != null) {
@@ -87,5 +83,9 @@ class RealCatcherConnection implements CatcherConnection {
     @Override
     public String toString() {
         return "CatcherConnection{" + "server=" + server + '}';
+    }
+
+    public void setServer(PeerInfo host) {
+        server = host;
     }
 }

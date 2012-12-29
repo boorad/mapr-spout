@@ -1,8 +1,10 @@
 package com.mapr.franz.catcher;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
@@ -18,6 +20,7 @@ import java.security.SecureRandom;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.Assert.*;
 
@@ -43,45 +46,49 @@ public class ClientTest {
     @Test
     public void oneServerRetry() throws ServiceException, IOException {
         final ServerFarm farm = new ServerFarm();
-        Client c = new Client(new ConnectionFactory() {
-            int attempt = 0;
+        new MockUp<CatcherConnection>() {
+            CatcherConnection it;
 
-            @Override
-            public CatcherConnection create(PeerInfo server) throws IOException {
-                if (attempt++ == 0) {
-                    // first try fails
-                    return null;
-                } else {
-                    // second retry works
-                    return new FakeConnection() {
-                        public Catcher.CatcherService.BlockingInterface getService() {
-                            return new BasicServer(new SecureRandom().nextLong(), farm);
-                        }
-                    };
-                }
+            @Mock(maxInvocations = 10)
+            public void $init(PeerInfo host) throws IOException {
+                it.setServer(host);
             }
-        }, Lists.newArrayList(new PeerInfo("foo", 0)));
 
-        c.sendMessage("topic", "message");
+            @Mock
+            public Catcher.CatcherService.BlockingInterface getService() {
+                return new FarmedServer(new Client.HostPort(new PeerInfo("foo", 123)), new SecureRandom().nextLong(), farm);
+            }
+
+            @Mock
+            public String toString() {
+                return "MockConnection(" + it.getServer() + ")";
+            }
+        };
+
+        Client c = new Client(Lists.newArrayList(new PeerInfo("foo", 0)));
+
+        c.sendMessage("3", "message");
         assertEquals(1, farm.getMessages().size());
         assertEquals("message", farm.getMessages().get(0));
     }
 
     // verifies redirects are remembered by the client
     // also verifies that server failures are dealt with only a few redirects
+    // also verifies that overall transaction counts are evenly distributed
     @Test
     public void redirects() throws ServiceException, IOException {
         final ServerFarm farm = new ServerFarm();
         final Map<CatcherConnection, FarmedServer> servermap = Maps.newHashMap();
         final Map<CatcherConnection, PeerInfo> hostmap = Maps.newHashMap();
 
-        new MockUp<RealCatcherConnection>() {
+        new MockUp<CatcherConnection>() {
             CatcherConnection it;
 
             @Mock(maxInvocations = 10)
-            public void $init(PeerInfo host1) {
-                servermap.put(it, farm.newServer());
-                hostmap.put(it, host1);
+            public void $init(PeerInfo host) throws IOException {
+                servermap.put(it, farm.newServer(new Client.HostPort(host)));
+                hostmap.put(it, host);
+                it.setServer(host);
             }
 
             @Mock
@@ -95,6 +102,10 @@ public class ClientTest {
             }
         };
 
+        for (FarmedServer server : farm.servers) {
+            server.messageCount = 0;
+        }
+
         List<PeerInfo> hosts = Lists.newArrayList();
         for (int i = 0; i < 10; i++) {
             hosts.add(new PeerInfo(Integer.toString(i), 100));
@@ -102,29 +113,58 @@ public class ClientTest {
 
         Client c = new Client(hosts);
 
-        for (int i = 0; i < 1000; i++) {
-            int topic = i % 31;
+        for (int i = 0; i < 600; i++) {
+            int topic = i % 30;
             c.sendMessage(Integer.toString(topic), "message " + i);
         }
-        assertEquals(1000, farm.messageCount);
+
+        assertEquals(600, countMessages(farm.servers));
+        assertEquals(600, farm.messageCount);
         int firstPassRedirects = farm.redirectCount;
-        assertTrue("Should have few redirects", firstPassRedirects < 31);
+        assertTrue("Should have few redirects, got " + firstPassRedirects, firstPassRedirects <= 30);
         assertEquals(10, farm.helloCount);
 
-        FarmedServer x = farm.servers.remove(farm.servers.size() - 1);
-        x.emulateServerFailure();
+        // assert rough balance of traffic
+        for (FarmedServer server : farm.servers) {
+            assertEquals(600 / 10, server.getMessageCount(), 15);
+        }
 
-        for (int i = 0; i < 1000; i++) {
-            int topic = i % 31;
+        // kill 4 servers.  That leaves 6 which still divides 30 topics evenly.
+        List<FarmedServer> dead = Lists.newArrayList();
+        dead.addAll(farm.servers.subList(6, 10));
+        farm.servers = farm.servers.subList(0, 6);
+        int deadCount = countMessages(dead);
+        for (FarmedServer server : dead) {
+            server.emulateServerFailure();
+        }
+
+        for (int i = 0; i < 600; i++) {
+            int topic = i % 30;
             c.sendMessage(Integer.toString(topic), "message " + i);
         }
 
-        assertEquals(2000, farm.messageCount);
-        assertTrue("Should have few redirects", farm.redirectCount - firstPassRedirects < 31);
+        assertEquals(2 * 600, farm.messageCount);
+        assertEquals(deadCount, countMessages(dead));
+        assertEquals(2 * 600, countMessages(Iterables.concat(farm.servers, dead)));
+
+        // and again, should have rough balance.
+        for (FarmedServer server : farm.servers) {
+            assertEquals(600 / 10 + 600 / 6, server.getMessageCount(), 24);
+        }
+
+        assertEquals(2 * 600, farm.messageCount);
+        assertTrue("Should have few redirects", farm.redirectCount - firstPassRedirects <= 30);
         assertEquals(10, farm.helloCount);
 
         c.close();
+    }
 
+    private int countMessages(Iterable<FarmedServer> servers) {
+        int count = 0;
+        for (FarmedServer server : servers) {
+            count += server.getMessageCount();
+        }
+        return count;
     }
 
     /**
@@ -138,11 +178,16 @@ public class ClientTest {
         private int messageCount = 0;
         private int helloCount = 0;
         final List<String> messages = Lists.newArrayList();
+        private Set<Client.HostPort> deadHosts = Sets.newHashSet();
 
-        public FarmedServer newServer() {
-            FarmedServer r = new FarmedServer(servers.size(), this);
-            servers.add(r);
-            return r;
+        public FarmedServer newServer(Client.HostPort hostPort) throws IOException {
+            if (!deadHosts.contains(hostPort)) {
+                FarmedServer r = new FarmedServer(hostPort, servers.size(), this);
+                servers.add(r);
+                return r;
+            } else {
+                throw new IOException("Connection refused :-)");
+            }
         }
 
         public int size() {
@@ -177,17 +222,26 @@ public class ClientTest {
         public List<String> getMessages() {
             return messages;
         }
+
+        public void recordDeadHost(Client.HostPort hostPort) {
+            deadHosts.add(hostPort);
+        }
     }
 
     /**
      * Emulates minimal server function and allows emulation of failures.
      */
-    private static class BasicServer implements Catcher.CatcherService.BlockingInterface {
+    private static class FarmedServer implements Catcher.CatcherService.BlockingInterface {
+        protected int helloCount = 0;
+        protected int redirectCount = 0;
+        protected int messageCount = 0;
+        private Client.HostPort hostPort;
         private final long id;
         private final ServerFarm farm;
         private boolean isDead = false;
 
-        private BasicServer(long id, ServerFarm farm) {
+        private FarmedServer(Client.HostPort hostPort, long id, ServerFarm farm) {
+            this.hostPort = hostPort;
             this.id = id;
             this.farm = farm;
         }
@@ -195,7 +249,10 @@ public class ClientTest {
         @Override
         public Catcher.HelloResponse hello(RpcController controller, Catcher.Hello request) throws ServiceException {
             checkForFailure();
-            farm.notifyHello(id);
+            helloCount++;
+            if (farm != null) {
+                farm.notifyHello(id);
+            }
 
             return Catcher.HelloResponse
                     .newBuilder().setServerId(id)
@@ -207,19 +264,32 @@ public class ClientTest {
             Preconditions.checkArgument(request.hasPayload());
             checkForFailure();
 
+
             String topic = request.getTopic();
             farm.notifyMessage(id, topic, request.getPayload().toStringUtf8());
 
+            int topicNumber = Integer.parseInt(topic);
+            messageCount++;
             Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse.newBuilder()
                     .setServerId(id)
                     .setSuccessful(true);
-            return r.build();
-        }
 
-        public void checkForFailure() throws ServiceException {
-            if (isDead) {
-                throw new ServiceException("Simulated server shutdown");
+            if (farm.size() != 0) {
+                FarmedServer redirectServer = farm.servers.get(topicNumber % farm.size());
+                long redirectTo = redirectServer.getId();
+                if (redirectTo != getId()) {
+                    redirectCount++;
+                    getFarm().notifyRedirect(getId(), redirectTo);
+                    Catcher.TopicMapping.Builder redirect = r.getRedirectBuilder();
+                    redirect.setTopic(Integer.toString(topicNumber));
+                    redirect.setServerId(redirectTo);
+                    redirect.addHostBuilder()
+                            .setHostName(redirectServer.getHost())
+                            .setPort(redirectServer.getPort())
+                            .build();
+                }
             }
+            return r.build();
         }
 
         @Override
@@ -234,47 +304,30 @@ public class ClientTest {
         }
 
         public long getId() {
-
             return id;
         }
 
+        public void checkForFailure() throws ServiceException {
+            if (isDead) {
+                throw new ServiceException("Simulated server shutdown");
+            }
+        }
+
         public void emulateServerFailure() {
+            farm.recordDeadHost(hostPort);
             isDead = true;
         }
-    }
 
-    /**
-     * Emulates topic redirection.
-     */
-    private static class FarmedServer extends BasicServer {
-        private FarmedServer(long id, ServerFarm farm) {
-            super(id, farm);
+        public String getHost() {
+            return hostPort.getHost();
         }
 
-        @Override
-        public Catcher.LogMessageResponse log(RpcController controller, Catcher.LogMessage request) throws ServiceException {
-            Preconditions.checkArgument(request.hasPayload());
-            checkForFailure();
+        public int getPort() {
+            return hostPort.getPort();
+        }
 
-            String topic = request.getTopic();
-            int topicNumber = Integer.parseInt(topic);
-            getFarm().notifyMessage(getId(), topic, request.getPayload().toStringUtf8());
-            Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse.newBuilder()
-                    .setServerId(getId())
-                    .setSuccessful(true);
-
-            int redirectTo = topicNumber % getFarm().size();
-            if (redirectTo != getId()) {
-                getFarm().notifyRedirect(getId(), redirectTo);
-                Catcher.TopicMapping.Builder redirect = r.getRedirectBuilder();
-                redirect.setTopic(Integer.toString(topicNumber));
-                redirect.setServerId(redirectTo);
-                redirect.addHostBuilder()
-                        .setHostName(Long.toString(redirectTo))
-                        .setPort(100)
-                        .build();
-            }
-            return r.build();
+        public int getMessageCount() {
+            return messageCount;
         }
     }
 

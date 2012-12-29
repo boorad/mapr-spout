@@ -70,7 +70,8 @@ public class Client {
 
     // history of all connections
     // this is retained so that we can be sure to call close on everything that we
-    // ever open.
+    // ever open.  It also lets us have a back-stop of servers if the topic map points us
+    // at a dead server.
     private Set<CatcherConnection> allConnections = Collections.newSetFromMap(new ConcurrentHashMap<CatcherConnection, Boolean>());
 
     // history of all host,port => server mappings.  Useful for reverse engineering in failure modes
@@ -85,7 +86,7 @@ public class Client {
 
     // TODO should periodically attempt to reconnect to any of these that have gotten lost
     // collects all of the servers we have tried to connect with
-    private final Set<HostPort > allKnownServers = Collections.newSetFromMap(new ConcurrentHashMap<HostPort , Boolean>());
+    private final Set<HostPort> allKnownServers = Collections.newSetFromMap(new ConcurrentHashMap<HostPort, Boolean>());
 
     // how many messages has this Client sent (used to generate message UUID)
     private AtomicLong messageCount = new AtomicLong(0);
@@ -115,20 +116,27 @@ public class Client {
     }
 
     public void sendMessage(String topic, ByteBuffer message) throws IOException {
+        long messageId = myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME);
+        logger.info("Starting {} to topic {}", messageId, topic);
         // first find a good server to talk to
-        Long preferredServer = topicMap.get(topic);
+        final Long preferredServer = topicMap.get(topic);
         Collection<CatcherConnection> servers;
         if (preferredServer == null) {
             // unknown topic, pick server at random
             // TODO possibly make this more efficient if it turns out to be common
-            servers = Lists.newArrayList(hostConnections.values());
-            if (servers.size() == 0) {
+            List<CatcherConnection> s = Lists.newArrayList(hostConnections.values());
+            if (s.size() == 0) {
                 logger.error("Found no live catcher connections... will try to reopen");
                 connectAll(allKnownServers);
             }
+            // balance load when we don't know where the topic goes
+            Collections.shuffle(s);
+            servers = s;
         } else {
+
             // we have a preference... now we need to connect to same
             servers = hostConnections.get(preferredServer);
+            logger.info("Topic {} to {}", topic, servers);
 
             // shouldn't happen, but it could depending on other threads
             if (servers == null) {
@@ -145,89 +153,122 @@ public class Client {
         }
 
         // now try to send the message keeping track of errors
-        Catcher.LogMessageResponse r;
         List<CatcherConnection> pendingConnectionRemovals = Lists.newArrayList();
 
         // note that concatenation here is done lazily.  We add everything to the list to be as persistent as possible.
-        for (CatcherConnection s : Iterables.concat(servers, allConnections)) {
-            Catcher.LogMessage request = Catcher.LogMessage.newBuilder()
-                    .setTopic(topic)
-                            // multiplying by a big prime acts to spread out the bit changes between consecutive messages
-                    .setClientId(myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME))
-                    .setPayload(ByteString.copyFrom(message))
-                    .build();
-            try {
-                r = s.getService().log(s.getController(), request);
+        Catcher.LogMessage request = Catcher.LogMessage.newBuilder()
+                .setTopic(topic)
+                        // multiplying by a big prime acts to spread out the bit changes between consecutive messages
+                .setClientId(messageId)
+                .setPayload(ByteString.copyFrom(message))
+                .build();
 
-                // server responded at least
-                if (r.getSuccessful()) {
-                    // repeated TopicMapping redirects = 3;
-                    if (r.hasRedirect()) {
-                        // don't natter on about this forever.  It could be we can only see a few hosts
-                        if (redirectCount < MAX_REDIRECTS_BEFORE_LIVING_WITH_INDIRECTS) {
-                            Catcher.TopicMapping redirect = r.getRedirect();
-
-                            // connect to all possible address of this redirected host
-                            List<HostPort > newHosts = Lists.newArrayList();
-                            for (int i = 0; i < redirect.getHostCount(); i++) {
-                                Catcher.Host h = redirect.getHost(i);
-                                newHosts.add(new HostPort(h.getHostName(), h.getPort()));
-                            }
-                            connectAll(newHosts);
-
-                            // we should now know about this host
-                            long id = redirect.getServerId();
-
-                            // if so, cache the topic mapping
-                            if (hostConnections.containsKey(id)) {
-                                topicMap.put(redirect.getTopic(), id);
-                            } else {
-                                // if not, things are a bit odd.  Probably due to black-listing or errors.
-                                logger.warn("Can't find server {} in connection map after redirect on topic {}", id, topic);
-                            }
-                            redirectCount++;
-                        }
-                    } else {
-                        redirectCount = 0;
-                    }
-                } else {
-                    throw new IOException(r.getBackTrace());
-                }
-
-                // no more retries
+        // try the first line candidates
+        boolean done = false;
+        for (CatcherConnection s : servers) {
+            done = sendInternal(s, topic, messageId, request, pendingConnectionRemovals);
+            if (done) {
                 break;
-            } catch (ServiceException e) {
-                // request failed for whatever reason.  Retry and remember the problem child
-                pendingConnectionRemovals.add(s);
             }
         }
 
+        // if that didn't do the job, try all other servers in random order
+        if (!done) {
+            List<CatcherConnection> tmp = Lists.newArrayList(allConnections);
+            Collections.shuffle(tmp);
+            for (CatcherConnection s : tmp) {
+                if (sendInternal(s, topic, messageId, request, pendingConnectionRemovals)) {
+                    break;
+                }
+            }
+        }
+
+        // remove all connections that cause an error
         if (pendingConnectionRemovals.size() > 0) {
             allConnections.removeAll(pendingConnectionRemovals);
             for (CatcherConnection connection : pendingConnectionRemovals) {
-                if (preferredServer == null) {
-                    preferredServer = knownServers.get(new HostPort(connection.getServer()));
-                    // this should reappear due to a redirect
-                    knownServers.remove(new HostPort(connection.getServer()));
-                }
+                PeerInfo pi = connection.getServer();
+                if (pi != null) {
+                    HostPort hostPort = new HostPort(pi);
+                    Long serverId = knownServers.get(hostPort);
+                    knownServers.remove(hostPort);
 
-                if (preferredServer != null) {
-                    // forget any topic mappings for this host
-                    List<String> toRemove = Lists.newArrayList();
-                    for (String t : topicMap.keySet()) {
-                        if (topicMap.get(t).equals(preferredServer)) {
-                            toRemove.add(t);
+                    if (serverId != null) {
+                        // forget any topic mappings for this host
+                        List<String> toRemove = Lists.newArrayList();
+                        for (String t : topicMap.keySet()) {
+                            if (topicMap.get(t).equals(serverId)) {
+                                toRemove.add(t);
+                            }
                         }
+                        for (String t : toRemove) {
+                            topicMap.remove(t);
+                        }
+                        hostConnections.remove(serverId, connection);
                     }
-                    for (String t : toRemove) {
-                        topicMap.remove(t);
-                    }
-                    // remove connection that causes an error
-                    hostConnections.remove(preferredServer, connection);
                 }
                 connection.close();
             }
         }
+    }
+
+    private boolean sendInternal(CatcherConnection s, String topic, long messageId, Catcher.LogMessage request, List<CatcherConnection> pendingConnectionRemovals) throws IOException {
+        Catcher.LogMessageResponse r;
+        try {
+            r = s.getService().log(s.getController(), request);
+
+            // server responded at least
+            if (r.getSuccessful()) {
+                logger.info("Success {} to {}", messageId, s.getServer());
+                // repeated TopicMapping redirects = 3;
+                if (r.hasRedirect()) {
+                    // don't natter on about this forever.  It could be we can only see a few hosts
+                    if (redirectCount < MAX_REDIRECTS_BEFORE_LIVING_WITH_INDIRECTS) {
+                        Catcher.TopicMapping redirect = r.getRedirect();
+
+                        long redirectId = redirect.getServerId();
+                        logger.info("redirect {} to {}", messageId, redirect.getServerId());
+
+                        // connect to all possible address of this redirected host
+                        List<HostPort> newHosts = Lists.newArrayList();
+                        for (int i = 0; i < redirect.getHostCount(); i++) {
+                            Catcher.Host h = redirect.getHost(i);
+                            newHosts.add(new HostPort(h.getHostName(), h.getPort()));
+                        }
+                        connectAll(newHosts);
+
+                        // we should now know about this host
+                        // if so, cache the topic mapping
+                        if (hostConnections.containsKey(redirectId)) {
+                            topicMap.put(redirect.getTopic(), redirectId);
+                        } else {
+                            // if not, things are a bit odd.  Probably due to black-listing or connection errors.
+                            logger.warn("Can't find server {} in connection map after redirect on topic {}", redirectId, topic);
+                        }
+                        redirectCount++;
+                    }
+                } else {
+                    Long id = topicMap.get(topic);
+                    if (id == null || id != r.getServerId()) {
+                        topicMap.put(topic, r.getServerId());
+                    }
+                    redirectCount = 0;
+                }
+
+                // no more retries
+                return true;
+            } else {
+                // server side failure... don't retry this
+                IOException e = new IOException(r.getBackTrace());
+                logger.warn(String.format("Server side failure %d to %s", messageId, s.getServer()), e);
+                throw e;
+            }
+        } catch (ServiceException e) {
+            // request failed for whatever reason.  Retry and remember the problem child
+            logger.warn("Failure {} to {}", messageId, s.getServer());
+            pendingConnectionRemovals.add(s);
+        }
+        return false;
     }
 
     public void close() {
@@ -260,7 +301,7 @@ public class Client {
                 if (!attempted.contains(server) && !knownServers.keySet().contains(server)) {
                     try {
                         if (serverBlackList.count(server) < MAX_SERVER_RETRIES_BEFORE_BLACKLISTING) {
-                            logger.debug("Connecting to {}", server);
+                            logger.info("Connecting to {}", server);
                             CatcherConnection s = connector.create(server.asPortInfo());
                             if (s != null) {
                                 Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
@@ -280,12 +321,12 @@ public class Client {
                                 }
                             } else {
                                 serverBlackList.add(server);
-                                logger.debug("Cannot connect to {}", server);
+                                logger.warn("Cannot connect to {}", server);
                             }
                         }
                     } catch (ServiceException e) {
                         serverBlackList.add(server);
-                        logger.warn("Could not connect to server", e);
+                        logger.warn("Hello failed", e);
                     }
                 }
             }
@@ -296,7 +337,7 @@ public class Client {
         }
     }
 
-    private static class HostPort {
+    public static class HostPort {
         private String host;
         private int port;
 
@@ -307,6 +348,14 @@ public class Client {
 
         public HostPort(PeerInfo server) {
             this(server.getHostName(), server.getPort());
+        }
+
+        public String getHost() {
+            return host;
+        }
+
+        public int getPort() {
+            return port;
         }
 
         @Override
@@ -327,6 +376,14 @@ public class Client {
 
         public PeerInfo asPortInfo() {
             return new PeerInfo(host, port);
+        }
+
+        @Override
+        public String toString() {
+            return "HostPort{" +
+                    "host='" + host + '\'' +
+                    ", port=" + port +
+                    '}';
         }
     }
 
