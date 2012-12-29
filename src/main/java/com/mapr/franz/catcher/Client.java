@@ -92,7 +92,7 @@ public class Client {
     private AtomicLong messageCount = new AtomicLong(0);
 
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
-        this(new CatcherConnectionFactory(), servers);
+        this(new ConnectionFactory(), servers);
     }
     public Client(ConnectionFactory connector, Iterable<PeerInfo> servers) throws IOException, ServiceException {
         this.connector = connector;

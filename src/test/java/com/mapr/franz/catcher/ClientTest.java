@@ -65,7 +65,18 @@ public class ClientTest {
             }
         };
 
-        Client c = new Client(Lists.newArrayList(new PeerInfo("foo", 0)));
+        Client c = new Client(new ConnectionFactory() {
+            int retry = 0;
+
+            @Override
+            public CatcherConnection create(PeerInfo server) {
+                if (retry++ == 0) {
+                    return null;
+                } else {
+                    return CatcherConnection.connect(server);
+                }
+            }
+        }, Lists.newArrayList(new PeerInfo("foo", 0)));
 
         c.sendMessage("3", "message");
         assertEquals(1, farm.getMessages().size());
