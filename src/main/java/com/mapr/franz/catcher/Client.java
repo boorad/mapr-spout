@@ -116,7 +116,7 @@ public class Client {
     }
 
     public void sendMessage(String topic, ByteBuffer message) throws IOException {
-        long messageId = myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME);
+        long messageId = (myUniqueId ^ (messageCount.getAndIncrement() * BIG_PRIME)) >>> 1;
         logger.info("Starting {} to topic {}", messageId, topic);
         // first find a good server to talk to
         final Long preferredServer = topicMap.get(topic);
@@ -305,6 +305,7 @@ public class Client {
                             CatcherConnection s = connector.create(server.asPortInfo());
                             if (s != null) {
                                 Catcher.HelloResponse r = s.getService().hello(s.getController(), request);
+                                attempted.add(server);
 
                                 hostConnections.put(r.getServerId(), s);
                                 allConnections.add(s);
@@ -318,6 +319,15 @@ public class Client {
                                         discovered.add(pi);
                                     }
                                     attempted.add(server);
+                                }
+                                for (Catcher.Server otherServer : r.getClusterList()) {
+                                    for (Catcher.Host host : otherServer.getHostList()) {
+                                        HostPort pi = new HostPort(host.getHostName(), host.getPort());
+                                        if (!attempted.contains(pi)) {
+                                            discovered.add(pi);
+                                        }
+                                        attempted.add(server);
+                                    }
                                 }
                             } else {
                                 serverBlackList.add(server);

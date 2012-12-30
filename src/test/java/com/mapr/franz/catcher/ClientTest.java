@@ -113,14 +113,13 @@ public class ClientTest {
             }
         };
 
-        for (FarmedServer server : farm.servers) {
-            server.messageCount = 0;
-        }
-
         List<PeerInfo> hosts = Lists.newArrayList();
         for (int i = 0; i < 10; i++) {
             hosts.add(new PeerInfo(Integer.toString(i), 100));
         }
+//        for (int i = 0; i < 10; i++) {
+//            farm.newServer(new Client.HostPort(Integer.toString(i), 100));
+//        }
 
         Client c = new Client(hosts);
 
@@ -169,6 +168,8 @@ public class ClientTest {
 
         c.close();
     }
+
+    // TODO add test to see how new hosts discovered during hello are handled.
 
     private int countMessages(Iterable<FarmedServer> servers) {
         int count = 0;
@@ -265,9 +266,16 @@ public class ClientTest {
                 farm.notifyHello(id);
             }
 
-            return Catcher.HelloResponse
-                    .newBuilder().setServerId(id)
-                    .build();
+            Catcher.HelloResponse.Builder r = Catcher.HelloResponse
+                    .newBuilder().setServerId(id);
+
+            for (FarmedServer server : farm) {
+                Catcher.Server.Builder s = r.addClusterBuilder();
+                s.setServerId(server.getId());
+                s.addHostBuilder().setHostName(server.getHost()).setPort(server.getPort()).build();
+                s.build();
+            }
+            return r.build();
         }
 
         @Override

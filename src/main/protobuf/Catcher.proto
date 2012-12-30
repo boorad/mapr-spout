@@ -13,6 +13,7 @@ message Hello {
 message HelloResponse {
     optional uint64 serverId = 1;
     repeated Host host = 2;
+    repeated Server cluster = 3;
 }
 
 // sends a message to a topic
@@ -46,13 +47,14 @@ message TopicMapping {
     repeated Host host = 3;
 }
 
+message Server {
+    optional uint64 serverId = 1;
+    repeated Host host = 2;
+}
+
 message Host {
     optional string hostName = 2;
     optional uint32 port = 3;
-}
-
-message Status {
-	optional string message = 1;
 }
 
 // the service itself
