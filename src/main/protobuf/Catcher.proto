@@ -21,6 +21,7 @@ message LogMessage {
     optional uint64 clientId = 1;
     optional string topic = 2;
     optional bytes payload = 3;
+    optional bool force = 4;
 }
 
 // the response includes one or more redirects for the next time
@@ -43,8 +44,7 @@ message CloseResponse {
 // message components
 message TopicMapping {
     optional string topic = 1;
-    optional uint64 serverId = 2;
-    repeated Host host = 3;
+    optional Server server = 2;
 }
 
 message Server {

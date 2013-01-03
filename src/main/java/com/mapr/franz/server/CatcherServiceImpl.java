@@ -1,39 +1,91 @@
 package com.mapr.franz.server;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import com.mapr.franz.catcher.Client;
 import com.mapr.franz.catcher.wire.Catcher;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.security.SecureRandom;
+import java.util.List;
+import java.util.Set;
 
 /**
  * The broken server.
  */
 public class CatcherServiceImpl implements Catcher.CatcherService.BlockingInterface {
-    private final long serverId = new SecureRandom().nextLong();
+    private final long serverId;
+
+    private int lastClusterSize = -1;
+    private Set<String> topicCache = Sets.newHashSet();
+    private ClusterState state;
+
+    // TODO implement some sort of statistics that records (a) number of clients, (b) transactions per topic, (c) bytes per topic
+
+    public CatcherServiceImpl(long serverId, ClusterState state) {
+        this.serverId = serverId;
+        this.state = state;
+    }
 
     @Override
     public Catcher.HelloResponse hello(RpcController controller, Catcher.Hello request) throws ServiceException {
-        return Catcher.HelloResponse.newBuilder().setServerId(serverId).build();
+        Catcher.HelloResponse.Builder r = Catcher.HelloResponse.newBuilder()
+                .setServerId(serverId);
+
+        for (Client.HostPort address : state.getLocalInfo().getAddresses()) {
+            Catcher.Host.Builder host = r.addHostBuilder();
+            host.setHostName(address.getHost());
+            host.setPort(address.getPort());
+            host.build();
+        }
+
+        for (Catcher.Server server : state.getCluster()) {
+            Catcher.Server.Builder c = r.addClusterBuilder();
+            c.mergeFrom(server);
+            c.build();
+        }
+        return r.build();
     }
 
     @Override
     public Catcher.LogMessageResponse log(RpcController controller, Catcher.LogMessage request) throws ServiceException {
-        UnsupportedOperationException e = new UnsupportedOperationException("Can't do a log op");
-        StringWriter writer = new StringWriter();
-        PrintWriter out = new PrintWriter(writer);
-        e.printStackTrace(out);
-        out.close();
-        return Catcher.LogMessageResponse.newBuilder()
+        String topic = request.getTopic();
+
+        Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse.newBuilder()
                 .setServerId(serverId)
-                .setSuccessful(false)
-                .setBackTrace(writer.toString()).build();
+                .setSuccessful(true);
+
+        ClusterState.Target directTo = state.directTo(topic);
+
+        if (directTo.getStatus() == ClusterState.Status.LIVE) {
+            if (directTo.isRedirect()) {
+                // TODO actually forward request to other server
+                r.getRedirectBuilder().setTopic(topic).setServer(directTo.getServer()).build();
+            }
+        } else {
+            ClusterStateException e = new ClusterStateException("Can't handle request ... can't see rest of cluster");
+            StringWriter s = new StringWriter();
+
+            PrintWriter pw = new PrintWriter(s);
+            e.printStackTrace(pw);
+            pw.close();
+
+            r.setSuccessful(false).setBackTrace(s.toString());
+        }
+
+        return r.build();
     }
 
     @Override
     public Catcher.CloseResponse close(RpcController controller, Catcher.Close request) throws ServiceException {
         return Catcher.CloseResponse.newBuilder().build();
+    }
+
+    private class ClusterStateException extends Exception {
+        public ClusterStateException(String msg) {
+            super(msg);
+        }
     }
 }

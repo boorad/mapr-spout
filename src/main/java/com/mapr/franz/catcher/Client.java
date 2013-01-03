@@ -77,6 +77,8 @@ public class Client {
     // history of all host,port => server mappings.  Useful for reverse engineering in failure modes
     private Map<HostPort, Long> knownServers = Maps.newConcurrentMap();
 
+    // TODO should periodically send a Hello to update the list of servers
+
     // TODO should reset this periodically so we try servers again in case network is repaired
     // list of server connections that have been persistently bad which we now ignore
     private Multiset<HostPort > serverBlackList = ConcurrentHashMultiset.create();
@@ -226,13 +228,12 @@ public class Client {
                     if (redirectCount < MAX_REDIRECTS_BEFORE_LIVING_WITH_INDIRECTS) {
                         Catcher.TopicMapping redirect = r.getRedirect();
 
-                        long redirectId = redirect.getServerId();
-                        logger.info("redirect {} to {}", messageId, redirect.getServerId());
+                        long redirectId = redirect.getServer().getServerId();
+                        logger.info("redirect {} to {}", messageId, redirectId);
 
                         // connect to all possible address of this redirected host
                         List<HostPort> newHosts = Lists.newArrayList();
-                        for (int i = 0; i < redirect.getHostCount(); i++) {
-                            Catcher.Host h = redirect.getHost(i);
+                        for (Catcher.Host h : redirect.getServer().getHostList()) {
                             newHosts.add(new HostPort(h.getHostName(), h.getPort()));
                         }
                         connectAll(newHosts);
@@ -351,7 +352,7 @@ public class Client {
         private String host;
         private int port;
 
-        private HostPort(String host, int port) {
+        public HostPort(String host, int port) {
             this.host = host;
             this.port = port;
         }
