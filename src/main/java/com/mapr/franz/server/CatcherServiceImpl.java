@@ -1,7 +1,5 @@
 package com.mapr.franz.server;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.mapr.franz.catcher.Client;
@@ -9,17 +7,13 @@ import com.mapr.franz.catcher.wire.Catcher;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.List;
-import java.util.Set;
 
 /**
- * The broken server.
+ * The kinda broken server.
  */
 public class CatcherServiceImpl implements Catcher.CatcherService.BlockingInterface {
     private final long serverId;
 
-    private int lastClusterSize = -1;
-    private Set<String> topicCache = Sets.newHashSet();
     private ClusterState state;
 
     // TODO implement some sort of statistics that records (a) number of clients, (b) transactions per topic, (c) bytes per topic

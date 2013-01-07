@@ -2,6 +2,7 @@ package com.mapr.franz.server;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.mapr.franz.catcher.Client;
 import com.mapr.franz.catcher.wire.Catcher;
 import org.apache.zookeeper.CreateMode;
@@ -14,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -52,8 +52,8 @@ public class ClusterState {
     private final Server.Info info;
     private Logger logger = LoggerFactory.getLogger(ClusterState.class);
 
-    private final long myUniqueId = new SecureRandom().nextLong() >>> 1;
-    private final String myStateFileName = String.format("%016x", myUniqueId);
+    private final long myUniqueId;
+    private final String myStateFileName;
     private final byte[] myDescription;
 
     private int maxConnectAttempts;
@@ -79,14 +79,17 @@ public class ClusterState {
         STARTING, UNKNOWN, LIVE, FAILED
     }
 
-    public ClusterState(String connectString, String base, Server.Info info) throws IOException, KeeperException, InterruptedException {
+    public ClusterState(String connectString, String base, Server.Info info) throws IOException, InterruptedException {
         connectThread = Executors.newSingleThreadExecutor();
 
         this.connectString = connectString;
         this.base = base;
 
-        Catcher.Server.Builder addressBuilder = Catcher.Server.newBuilder().setServerId(myUniqueId);
         this.info = info;
+        myUniqueId = info.getId();
+        myStateFileName = String.format("%s/%016x", base, myUniqueId);
+
+        Catcher.Server.Builder addressBuilder = Catcher.Server.newBuilder().setServerId(myUniqueId);
         for (Client.HostPort hostPort : this.info.getAddresses()) {
             addressBuilder.addHostBuilder().setHostName(hostPort.getHost()).setPort(hostPort.getPort()).build();
         }
@@ -97,6 +100,17 @@ public class ClusterState {
         // try forever
         maxConnectAttempts = 0;
         maxReadAttempts = 10;
+
+        try {
+            newSession.call();
+        } catch (IOException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Exception e) {
+            // should be impossible
+            throw new RuntimeException("Impossible exception from newSession", e);
+        }
     }
 
     public Server.Info getLocalInfo() {
@@ -191,10 +205,17 @@ public class ClusterState {
 
         while (attempts < maxReadAttempts) {
             try {
-                List<String> tmp = zk.getChildren(base, true);
-                Collections.sort(tmp);
                 synchronized (this) {
+                    List<String> tmp = zk.getChildren(base, true);
+                    Collections.sort(tmp);
                     cluster = tmp;
+                    for (String server : tmp) {
+                        try {
+                            servers.put(server, Catcher.Server.parseFrom(zk.getData(server, false, null)));
+                        } catch (InvalidProtocolBufferException e) {
+                            throw new RuntimeException("Invalid state in ZK for server " + server, e);
+                        }
+                    }
                     ourPosition = cluster.indexOf(myStateFileName);
                     generation++;
                     status = Status.LIVE;
@@ -246,7 +267,7 @@ public class ClusterState {
                     } catch (KeeperException.NodeExistsException e) {
                         // ignore
                     }
-                    zk.create(base + "/" + myStateFileName, myDescription, ZooDefs.Ids.CREATOR_ALL_ACL, CreateMode.EPHEMERAL);
+                    zk.create(myStateFileName, myDescription, ZooDefs.Ids.READ_ACL_UNSAFE, CreateMode.EPHEMERAL);
 
                     readState(base);
                     return zk;

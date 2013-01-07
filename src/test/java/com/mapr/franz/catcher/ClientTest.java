@@ -301,11 +301,12 @@ public class ClientTest {
                     getFarm().notifyRedirect(getId(), redirectTo);
                     Catcher.TopicMapping.Builder redirect = r.getRedirectBuilder();
                     redirect.setTopic(Integer.toString(topicNumber));
-                    redirect.setServerId(redirectTo);
-                    redirect.addHostBuilder()
+                    Catcher.Server.Builder server = redirect.getServerBuilder().setServerId(redirectTo);
+                    server.addHostBuilder()
                             .setHostName(redirectServer.getHost())
                             .setPort(redirectServer.getPort())
                             .build();
+                    server.build();
                 }
             }
             return r.build();

@@ -1,6 +1,7 @@
 package com.mapr.franz.server;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Sets;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
 import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
@@ -112,6 +113,26 @@ public class Server {
 
         public List<Client.HostPort> getAddresses() {
             return addresses;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Info)) return false;
+
+            Info info = (Info) o;
+            if (id == info.id) {
+                return addresses.size() == Sets.intersection(Sets.newHashSet(addresses), Sets.newHashSet(info.addresses)).size();
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            int result = (int) (id ^ (id >>> 32));
+            result = 31 * result + addresses.hashCode();
+            return result;
         }
     }
 }
