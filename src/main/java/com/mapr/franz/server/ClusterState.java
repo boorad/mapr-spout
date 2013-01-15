@@ -57,6 +57,9 @@ public class ClusterState {
     private final byte[] myDescription;
 
     private int maxConnectAttempts;
+
+    private int maxRetryDelay = 20000;
+
     private int maxReadAttempts;
     private final ExecutorService connectThread;
 
@@ -117,6 +120,14 @@ public class ClusterState {
         return info;
     }
 
+    public void exit() throws InterruptedException {
+        try {
+            zk.delete(myStateFileName, -1);
+        } catch (KeeperException e) {
+            logger.warn(String.format("Cluster status file %s could not be deleted from Zookeeper", myStateFileName), e);
+        }
+        zk.close();
+    }
 
     public Target directTo(String topic) {
         int hash = topic.hashCode();
@@ -206,6 +217,7 @@ public class ClusterState {
         while (attempts < maxReadAttempts) {
             try {
                 synchronized (this) {
+                    servers.clear();
                     List<String> tmp = zk.getChildren(base, true);
                     Collections.sort(tmp);
                     cluster = tmp;
@@ -278,15 +290,24 @@ public class ClusterState {
                         throw e;
                     }
                     retryDelay *= 1.5;
-                    if (retryDelay > 20000) {
-                        retryDelay = 20000;
+                    if (retryDelay > maxRetryDelay) {
+                        retryDelay = maxRetryDelay;
                     }
                     Thread.sleep(retryDelay);
                 } catch (KeeperException e) {
                     status = Status.FAILED;
                     logger.error("Failed to establish state, giving up", e);
+                    throw new IOException(String.format("Server status node for server %d already exists in Zookeeper", myUniqueId), e);
                 }
             }
         }
     };
+
+    public void setMaxRetryDelay(int maxRetryDelay) {
+        this.maxRetryDelay = maxRetryDelay;
+    }
+
+    public void setMaxConnectAttempts(int maxConnectAttempts) {
+        this.maxConnectAttempts = maxConnectAttempts;
+    }
 }
