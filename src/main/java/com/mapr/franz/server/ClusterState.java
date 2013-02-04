@@ -53,6 +53,7 @@ public class ClusterState {
     private Logger logger = LoggerFactory.getLogger(ClusterState.class);
 
     private final long myUniqueId;
+    private final String myStateFilePath;
     private final String myStateFileName;
     private final byte[] myDescription;
 
@@ -90,7 +91,8 @@ public class ClusterState {
 
         this.info = info;
         myUniqueId = info.getId();
-        myStateFileName = String.format("%s/%016x", base, myUniqueId);
+        myStateFileName = String.format("%016x", myUniqueId);
+        myStateFilePath = String.format("%s/%016x", base, myUniqueId);
 
         Catcher.Server.Builder addressBuilder = Catcher.Server.newBuilder().setServerId(myUniqueId);
         for (Client.HostPort hostPort : this.info.getAddresses()) {
@@ -122,9 +124,9 @@ public class ClusterState {
 
     public void exit() throws InterruptedException {
         try {
-            zk.delete(myStateFileName, -1);
+            zk.delete(myStateFilePath, -1);
         } catch (KeeperException e) {
-            logger.warn(String.format("Cluster status file %s could not be deleted from Zookeeper", myStateFileName), e);
+            logger.warn(String.format("Cluster status file %s could not be deleted from Zookeeper", myStateFilePath), e);
         }
         zk.close();
     }
@@ -180,24 +182,36 @@ public class ClusterState {
                         // we have been partitioned away from the ZK cluster.  It may come back.  Or not.
                         // we should handle pending events, but nothing more.  Any incoming events should
                         // be returned as failures.
+                        logger.info("Disconnected, stay tuned for reconnect or expiration");
                         disconnect();
                         break;
                     case SyncConnected:
                         // we have been reconnected with the ZK cluster and we can continue service as if nothing has happened
+                        logger.info("SyncConnected");
                         reconnect();
                         break;
                     case Expired:
                         // our session expired.  This means that the cluster has forgotten us and we need to reconnect
-                        newSession();
+                        logger.info("Session expired, will try to re-open connection");
+                        try {
+                            openNewSession();
+                        } catch (InterruptedException e) {
+                            // ignore
+                        } catch (IOException e) {
+                            logger.error("Can't re-open session, retrying in background", e);
+                            newSession();
+                        }
                         break;
                 }
             } else {
                 switch (event.getType()) {
                     case NodeChildrenChanged:
+                        logger.info("Directory changed");
                         readState(base);
                         break;
                     case NodeDeleted:
                         // this is a puzzle ... somebody has presumably deleted our base directory
+                        logger.error("Directory deleted ... shouldn't happen");
                         status = Status.FAILED;
                         break;
                 }
@@ -217,23 +231,42 @@ public class ClusterState {
         while (attempts < maxReadAttempts) {
             try {
                 synchronized (this) {
+                    logger.info("Server {} reading from status directory {}", myUniqueId, base);
                     servers.clear();
                     List<String> tmp = zk.getChildren(base, true);
                     Collections.sort(tmp);
                     cluster = tmp;
                     for (String server : tmp) {
                         try {
-                            servers.put(server, Catcher.Server.parseFrom(zk.getData(server, false, null)));
+                            servers.put(server, Catcher.Server.parseFrom(zk.getData(base + "/" + server, false, null)));
                         } catch (InvalidProtocolBufferException e) {
                             throw new RuntimeException("Invalid state in ZK for server " + server, e);
                         }
                     }
                     ourPosition = cluster.indexOf(myStateFileName);
-                    generation++;
-                    status = Status.LIVE;
+                    if (ourPosition >= 0) {
+                        logger.info("Entries: {}, our file: {}", cluster, myStateFileName);
+                        logger.info("Server {} read {} entries in status directory", myUniqueId, cluster.size());
+                        logger.info("Server {} has position {} ", myUniqueId, ourPosition);
+
+                        generation++;
+                        status = Status.LIVE;
+                        return;
+                    } else {
+                        logger.warn("Server {} not in directory yet", myUniqueId);
+                    }
                 }
-                return;
-            } catch (KeeperException e) {
+            } catch (KeeperException.ConnectionLossException e) {
+                disconnect();
+            } catch (KeeperException.SessionExpiredException e) {
+                try {
+                    zk.close();
+                    return;
+                } catch (InterruptedException e1) {
+                    // ignore
+                }
+                newSession();
+            } catch(KeeperException e) {
                 logger.warn("Could not read cluster state", e);
                 retryDelay = (int) Math.min(1.5 * retryDelay + 1, 10000);
                 try {
@@ -268,40 +301,45 @@ public class ClusterState {
     private Callable<ZooKeeper> newSession = new Callable<ZooKeeper>() {
         @Override
         public ZooKeeper call() throws IOException, InterruptedException {
-            int attempts = 0;
-            int retryDelay = 10;
-
-            while (true) {
-                try {
-                    zk = new ZooKeeper(connectString, 5000, new StateWatcher());
-                    try {
-                        zk.create(base, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-                    } catch (KeeperException.NodeExistsException e) {
-                        // ignore
-                    }
-                    zk.create(myStateFileName, myDescription, ZooDefs.Ids.READ_ACL_UNSAFE, CreateMode.EPHEMERAL);
-
-                    readState(base);
-                    return zk;
-                } catch (IOException e) {
-                    logger.warn("Error connecting to Zookeeper", e);
-                    attempts++;
-                    if (maxConnectAttempts != 0 && attempts >= maxConnectAttempts) {
-                        throw e;
-                    }
-                    retryDelay *= 1.5;
-                    if (retryDelay > maxRetryDelay) {
-                        retryDelay = maxRetryDelay;
-                    }
-                    Thread.sleep(retryDelay);
-                } catch (KeeperException e) {
-                    status = Status.FAILED;
-                    logger.error("Failed to establish state, giving up", e);
-                    throw new IOException(String.format("Server status node for server %d already exists in Zookeeper", myUniqueId), e);
-                }
-            }
+            return openNewSession();
         }
     };
+
+    private ZooKeeper openNewSession() throws InterruptedException, IOException {
+        int attempts = 0;
+        int retryDelay = 10;
+
+        while (true) {
+            try {
+                logger.warn("connecting to {}", connectString);
+                zk = new ZooKeeper(connectString, 5000, new StateWatcher());
+                try {
+                    zk.create(base, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                } catch (KeeperException.NodeExistsException e) {
+                    // ignore
+                }
+                zk.create(myStateFilePath, myDescription, ZooDefs.Ids.READ_ACL_UNSAFE, CreateMode.EPHEMERAL);
+
+                readState(base);
+                return zk;
+            } catch (IOException e) {
+                logger.warn("Error connecting to Zookeeper", e);
+                attempts++;
+                if (maxConnectAttempts != 0 && attempts >= maxConnectAttempts) {
+                    throw e;
+                }
+                retryDelay *= 1.5;
+                if (retryDelay > maxRetryDelay) {
+                    retryDelay = maxRetryDelay;
+                }
+                Thread.sleep(retryDelay);
+            } catch (KeeperException e) {
+                status = Status.FAILED;
+                logger.error("Failed to establish state, giving up", e);
+                throw new IOException(String.format("Server status node for server %d already exists in Zookeeper", myUniqueId), e);
+            }
+        }
+    }
 
     public void setMaxRetryDelay(int maxRetryDelay) {
         this.maxRetryDelay = maxRetryDelay;
@@ -309,5 +347,10 @@ public class ClusterState {
 
     public void setMaxConnectAttempts(int maxConnectAttempts) {
         this.maxConnectAttempts = maxConnectAttempts;
+    }
+
+    // exposed for testing
+    public ZooKeeper getZk() {
+        return zk;
     }
 }
