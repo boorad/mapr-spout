@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
 /**
  * Handles connecting to a server with standard options.
  */
-class CatcherConnection {
+public class CatcherConnection {
     private final Logger logger = LoggerFactory.getLogger(CatcherConnection.class);
 
     private final Catcher.CatcherService.BlockingInterface catcherService;
