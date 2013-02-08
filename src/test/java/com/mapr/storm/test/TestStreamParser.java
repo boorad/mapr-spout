@@ -1,4 +1,4 @@
-package com.mapr.storm;
+package com.mapr.storm.test;
 
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;

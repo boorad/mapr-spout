@@ -1,11 +1,6 @@
-package com.mapr.storm;
+package com.mapr.storm.test;
 
-import com.google.common.base.Charsets;
-import com.google.common.io.CharStreams;
-import com.google.common.io.Files;
-import junit.framework.Assert;
-import org.junit.After;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -14,7 +9,15 @@ import java.io.InputStreamReader;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
+import junit.framework.Assert;
+
+import org.junit.After;
+import org.junit.Test;
+
+import com.google.common.base.Charsets;
+import com.google.common.io.CharStreams;
+import com.google.common.io.Files;
+import com.mapr.storm.DirectoryScanner;
 
 public class DirectoryScannerTest {
 

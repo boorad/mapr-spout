@@ -1,4 +1,4 @@
-package com.mapr.storm;
+package com.mapr.storm.test;
 
 import static org.junit.Assert.assertEquals;
 
@@ -18,6 +18,7 @@ import backtype.storm.task.TopologyContext;
 
 import com.google.common.io.Files;
 import com.mapr.TailSpout;
+import com.mapr.storm.StreamParserFactory;
 
 public class TailSpoutTest {
 
