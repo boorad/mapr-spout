@@ -28,7 +28,7 @@ import java.util.concurrent.Executors;
  *
  * a) catch messages for topics it is handling.
  *
- * b) catch and forward messages for servers it is not forwarding
+ * b) catch and forward messages for servers it is not handling
  *
  * c) respond to hello messages with a list of the catchers in service
  *
