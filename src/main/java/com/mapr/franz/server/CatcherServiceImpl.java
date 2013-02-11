@@ -3,6 +3,7 @@ package com.mapr.franz.server;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.mapr.franz.catcher.Client;
@@ -13,6 +14,12 @@ import com.mapr.franz.catcher.wire.Catcher;
  */
 public class CatcherServiceImpl implements
         Catcher.CatcherService.BlockingInterface {
+
+    // TODO: configuration option
+    private final String basePath = "/tmp/mapr-spout-test/";
+
+    // TODO: replace with TopicObserver
+    private final GhettoTopicLogger logger = new GhettoTopicLogger(basePath);
 
     private final long serverId;
 
@@ -52,6 +59,7 @@ public class CatcherServiceImpl implements
             Catcher.LogMessage request) throws ServiceException {
 
         String topic = request.getTopic();
+        ByteString payload = request.getPayload();
 
         Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse
                 .newBuilder().setServerId(serverId).setSuccessful(true);
@@ -75,6 +83,8 @@ public class CatcherServiceImpl implements
 
             r.setSuccessful(false).setBackTrace(s.toString());
         }
+
+        logger.write(topic, payload);
 
         return r.build();
     }
