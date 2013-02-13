@@ -4,10 +4,11 @@ import backtype.storm.spout.SpoutOutputCollector;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.mapr.storm.DirectoryScanner;
-import com.mapr.storm.StreamParser;
-import com.mapr.storm.StreamParserFactory;
 import com.mapr.storm.PendingMessage;
 import com.mapr.storm.SpoutState;
+import com.mapr.storm.streamparser.StreamParser;
+import com.mapr.storm.streamparser.StreamParserFactory;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

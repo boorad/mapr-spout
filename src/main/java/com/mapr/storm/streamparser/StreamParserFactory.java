@@ -1,4 +1,4 @@
-package com.mapr.storm;
+package com.mapr.storm.streamparser;
 
 import java.io.FileInputStream;
 import java.io.Serializable;

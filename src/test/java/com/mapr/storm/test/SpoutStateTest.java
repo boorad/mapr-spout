@@ -19,7 +19,7 @@ import com.google.common.io.Files;
 import com.mapr.storm.DirectoryScanner;
 import com.mapr.storm.PendingMessage;
 import com.mapr.storm.SpoutState;
-import com.mapr.storm.StreamParser;
+import com.mapr.storm.streamparser.StreamParser;
 
 /**
  * Test state handling.

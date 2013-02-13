@@ -1,4 +1,4 @@
-package com.mapr.storm.test;
+package com.mapr.storm.streamparser;
 
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
@@ -9,9 +9,9 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 import backtype.storm.tuple.Values;
 
-import com.mapr.storm.StreamParser;
 
 /**
  * 
@@ -22,9 +22,9 @@ import com.mapr.storm.StreamParser;
  *  - content          is a (size_of_record)-long byte array
  *
  */
-public class TestStreamParser extends StreamParser {
+public class CountBlobStreamParser extends StreamParser {
 
-	private final Logger log = LoggerFactory.getLogger(TestStreamParser.class);
+	private final Logger log = LoggerFactory.getLogger(CountBlobStreamParser.class);
 	
 	private BufferedInputStream buf;
 	private byte[] recordSizeBuffer = new byte[4];
@@ -36,7 +36,7 @@ public class TestStreamParser extends StreamParser {
 	private StringBuffer currentRecord = new StringBuffer("");
 	private static final int RECORD_SIZE_BYTES = 4; // length of int in bytes
 
-	public TestStreamParser(FileInputStream in) {
+	public CountBlobStreamParser(FileInputStream in) {
 		buf = new BufferedInputStream(in);
 		recordSizeBuffer = new byte[4];
 		currentOffset = 0;
