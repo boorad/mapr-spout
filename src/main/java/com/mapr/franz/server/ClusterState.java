@@ -139,7 +139,8 @@ public class ClusterState {
             if (hash < 0) {
                 hash += n;
             }
-            return new Target(status, generation, servers.get(cluster.get(hash)), hash != ourPosition);
+            Catcher.Server s = servers.get(cluster.get(hash));
+            return new Target(status, generation, s, hash != ourPosition);
         }
     }
 
@@ -277,6 +278,7 @@ public class ClusterState {
             } catch (InterruptedException e) {
                 // ignore
             }
+		attempts++;
         }
         status = Status.FAILED;
         logger.error("Cannot read cluster state");
