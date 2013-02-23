@@ -47,9 +47,14 @@ public class Server {
     private static final String ZK_CONNECT_STRING = "localhost:2108";
     private static final String FRANZ_BASE = "/franz";
     private static final int FRANZ_PORT = 9013;
-
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
-        PeerInfo serverInfo = new PeerInfo("serverHostname", 8080);
+
+	if(args.length < 2) {
+		System.out.println("Usage: java -cp <classpath> com.mapr.franz.server.Server <hostname> <port> [zkhost:port]");
+	}
+
+	int port = Integer.parseInt(args[1]);	
+        PeerInfo serverInfo = new PeerInfo(args[0], port);
         //You need then to create a DuplexTcpServerBootstrap and provide it an RpcCallExecutor.
 
 
@@ -71,7 +76,11 @@ public class Server {
 
         //Finally binding the bootstrap to the TCP port will start off the socket accepting and clients can start to connect.
         long serverId = new SecureRandom().nextLong();
-        ClusterState zkState = new ClusterState(ZK_CONNECT_STRING, FRANZ_BASE, new Info(serverId, ImmutableList.of(new Client.HostPort(InetAddress.getLocalHost().getHostAddress(), FRANZ_PORT))));
+	String zk_str = ZK_CONNECT_STRING;
+	if(args.length == 3) {
+		zk_str = args[2];
+	}
+        ClusterState zkState = new ClusterState(zk_str, FRANZ_BASE, new Info(serverId, ImmutableList.of(new Client.HostPort(InetAddress.getLocalHost().getHostAddress(), port))));
 
         bootstrap.getRpcServiceRegistry().registerBlockingService(Catcher.CatcherService.newReflectiveBlockingService(new CatcherServiceImpl(serverId, zkState)));
 
