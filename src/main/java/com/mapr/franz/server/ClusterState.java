@@ -335,10 +335,12 @@ public class ClusterState {
                     retryDelay = maxRetryDelay;
                 }
                 Thread.sleep(retryDelay);
-            } catch (KeeperException e) {
+            } catch (KeeperException.NodeExistsException e) {
                 status = Status.FAILED;
                 logger.error("Failed to establish state, giving up", e);
                 throw new IOException(String.format("Server status node for server %d already exists in Zookeeper", myUniqueId), e);
+            } catch (KeeperException e) {
+                throw new IOException("Strange ZK exception", e);
             }
         }
     }
