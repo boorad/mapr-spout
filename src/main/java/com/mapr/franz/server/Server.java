@@ -1,6 +1,7 @@
 package com.mapr.franz.server;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
@@ -16,8 +17,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
 import java.net.UnknownHostException;
 import java.security.SecureRandom;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.Executors;
 
@@ -47,13 +51,14 @@ public class Server {
     private static final String ZK_CONNECT_STRING = "localhost:2108";
     private static final String FRANZ_BASE = "/franz";
     private static final int FRANZ_PORT = 9013;
+
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
 
-	if(args.length < 2) {
-		System.out.println("Usage: java -cp <classpath> com.mapr.franz.server.Server <hostname> <port> [zkhost:port]");
-	}
+        if (args.length < 2) {
+            System.out.println("Usage: java -cp <classpath> com.mapr.franz.server.Server <hostname> <port> [zkhost:port]");
+        }
 
-	int port = Integer.parseInt(args[1]);	
+        int port = Integer.parseInt(args[1]);
         PeerInfo serverInfo = new PeerInfo(args[0], port);
         //You need then to create a DuplexTcpServerBootstrap and provide it an RpcCallExecutor.
 
@@ -76,11 +81,22 @@ public class Server {
 
         //Finally binding the bootstrap to the TCP port will start off the socket accepting and clients can start to connect.
         long serverId = new SecureRandom().nextLong();
-	String zk_str = ZK_CONNECT_STRING;
-	if(args.length == 3) {
-		zk_str = args[2];
-	}
-        ClusterState zkState = new ClusterState(zk_str, FRANZ_BASE, new Info(serverId, ImmutableList.of(new Client.HostPort(InetAddress.getLocalHost().getHostAddress(), port))));
+        String zk_str = ZK_CONNECT_STRING;
+        if (args.length == 3) {
+            zk_str = args[2];
+        }
+
+        List<Client.HostPort> addresses = Lists.newArrayList();
+        Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
+        while (networkInterfaces.hasMoreElements()) {
+            NetworkInterface ifc = networkInterfaces.nextElement();
+            if (!ifc.isLoopback()) {
+                for (InterfaceAddress address : ifc.getInterfaceAddresses()) {
+                    addresses.add(new Client.HostPort(address.getAddress().getHostAddress(), port));
+                }
+            }
+        }
+        ClusterState zkState = new ClusterState(zk_str, FRANZ_BASE, new Info(serverId, addresses));
 
         bootstrap.getRpcServiceRegistry().registerBlockingService(Catcher.CatcherService.newReflectiveBlockingService(new CatcherServiceImpl(serverId, zkState)));
 
