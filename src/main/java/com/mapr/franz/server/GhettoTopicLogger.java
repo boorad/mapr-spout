@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 
 import com.google.common.io.Files;
@@ -28,7 +29,7 @@ public class GhettoTopicLogger {
         FileOutputStream fos;
         try {
             fos = new FileOutputStream(f, true); // append == true
-            int len = payload.size();
+            byte[] len = ByteBuffer.allocate(4).putInt(payload.size()).array();
             fos.write(len);
             fos.write(payload.toByteArray());
             fos.close();
