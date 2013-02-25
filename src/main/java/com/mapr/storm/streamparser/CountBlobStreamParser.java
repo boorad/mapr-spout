@@ -51,8 +51,7 @@ public class CountBlobStreamParser extends StreamParser {
 	@Override
 	public List<Object> nextRecord() {
 		List<Object> ret = null;
-		log.debug("nextRecord");
-		
+
 		try {
 			while( buf.available() > 0 ) {
 				if( currentOffset == currentBeginOffset ) {					
