@@ -16,7 +16,7 @@ public class CatcherServiceImpl implements
         Catcher.CatcherService.BlockingInterface {
 
     // TODO: configuration option
-    private final String basePath = "/tmp/mapr-spout-test/";
+    private final String basePath = "/tmp/mapr-spout-test/in";
 
     // TODO: replace with TopicObserver
     private final GhettoTopicLogger logger = new GhettoTopicLogger(basePath);
