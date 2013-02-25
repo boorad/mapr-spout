@@ -11,6 +11,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,7 @@ public class DirectoryScanner implements Serializable {
     private File liveFile;
 
     public DirectoryScanner(File inputDirectory, Pattern fileNamePattern) {
+        Preconditions.checkArgument(inputDirectory.exists(), String.format("Directory %s should already exist", inputDirectory));
         this.inputDirectory = inputDirectory;
         this.fileNamePattern = fileNamePattern;
     }
