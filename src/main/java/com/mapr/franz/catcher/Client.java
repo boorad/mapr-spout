@@ -336,7 +336,7 @@ public class Client {
                                 }
                             } else {
                                 serverBlackList.add(server);
-                                logger.warn("Cannot connect to {}", server);
+                                logger.warn("Blacklisting {}", server);
                             }
                         }
                     } catch (ServiceException e) {

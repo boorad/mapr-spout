@@ -201,9 +201,13 @@ public class TailSpout extends BaseRichSpout {
 
 		// look for a new file
 		FileInputStream r = scanner.nextInput();
-		parser = factory.createParser(r);
-		return r;
-	}
+        if (r != null) {
+            parser = factory.createParser(r);
+            return r;
+        } else {
+            return currentInput;
+        }
+    }
 
 	@Override
 	public void ack(Object messageId) {

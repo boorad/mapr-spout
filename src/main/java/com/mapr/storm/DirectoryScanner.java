@@ -11,6 +11,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,7 @@ public class DirectoryScanner implements Serializable {
     private File liveFile;
 
     public DirectoryScanner(File inputDirectory, Pattern fileNamePattern) {
+        Preconditions.checkArgument(inputDirectory.exists(), String.format("Directory %s should already exist", inputDirectory));
         this.inputDirectory = inputDirectory;
         this.fileNamePattern = fileNamePattern;
     }
@@ -72,29 +74,32 @@ public class DirectoryScanner implements Serializable {
     public FileInputStream nextInput() {
         FileInputStream r;
 
-        File currentFile = scanForFiles();
-        if (currentFile == null) {
+        File nextInLine = scanForFiles();
+        if (nextInLine == null) {
             log.trace("No new files");
             r = null;
         } else {
             try {
-                log.trace("Opening {}", currentFile);
-                r = new FileInputStream(currentFile);
+                log.trace("Opening {}", nextInLine);
+                r = new FileInputStream(nextInLine);
             } catch (FileNotFoundException e) {
                 // bizarre, but conceivable in a directory with crazy updates happening
-                log.warn("File was found in scan, but disappeared before open {}", currentFile);
+                log.warn("File was found in scan, but disappeared before open {}", nextInLine);
                 r = null;
             }
         }
 
-        if (liveInput != null) {
-            if (liveFile != null) {
-                log.trace("Closing {}", liveFile);
+        if (nextInLine != null) {
+            if (liveInput != null) {
+                if (liveFile != null) {
+                    log.trace("Closing {}", liveFile);
+                }
+                Closeables.closeQuietly(liveInput);
             }
-            Closeables.closeQuietly(liveInput);
+            liveFile = nextInLine;
+            liveInput = r;
         }
-        liveFile = currentFile;
-        liveInput = r;
+
         return r;
     }
 
