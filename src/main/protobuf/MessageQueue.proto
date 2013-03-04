@@ -1,0 +1,13 @@
+/**
+ * This defines the envelope that contains application level messages while
+ * in the queue.
+ */
+
+option java_generic_services = true;
+option java_package = "com.mapr.franz.catcher.wire";
+option java_outer_classname = "MessageQueue";
+
+message Message {
+    optional int64 time = 1;
+    optional bytes payload = 2;
+}

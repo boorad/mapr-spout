@@ -1,5 +1,6 @@
 package com.mapr.storm.streamparser;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -18,7 +19,7 @@ import java.util.List;
  * StreamParserFactory.createParser.
  */
 public abstract class StreamParser {
-	public abstract long currentOffset();
+	public abstract long currentOffset() throws IOException;
 
-	public abstract List<Object> nextRecord();
+	public abstract List<Object> nextRecord() throws IOException;
 }

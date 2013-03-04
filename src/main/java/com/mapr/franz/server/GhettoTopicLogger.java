@@ -15,10 +15,6 @@ public class GhettoTopicLogger {
     private String basePath = "";
     private HashMap<String, File> mapping;
 
-    public GhettoTopicLogger() {
-        this("");
-    }
-
     public GhettoTopicLogger(String basePath) {
         this.basePath = basePath;
         mapping = new HashMap<String, File>();

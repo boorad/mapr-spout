@@ -12,7 +12,6 @@ import com.mapr.storm.PendingMessage;
 import com.mapr.storm.SpoutState;
 import com.mapr.storm.streamparser.StreamParser;
 import com.mapr.storm.streamparser.StreamParserFactory;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +21,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 /**
@@ -56,151 +56,151 @@ import java.util.regex.Pattern;
  */
 public class TailSpout extends BaseRichSpout {
 
-	private static final long serialVersionUID = -3911379881516049619L;
+    private static final long serialVersionUID = -3911379881516049619L;
 
-	private final Logger log = LoggerFactory.getLogger(TailSpout.class);
+    private final Logger log = LoggerFactory.getLogger(TailSpout.class);
 
-	private DirectoryScanner scanner;
-	private FileInputStream currentInput = null;
+    private DirectoryScanner scanner;
+    private FileInputStream currentInput = null;
 
-	private boolean replayFailedMessages = true;
+    private AtomicBoolean replayFailedMessages = new AtomicBoolean(true);
 
-	// these are set in the constructors
-	private StreamParserFactory factory;
-	private File statusFile;
+    // these are set in the constructors
+    private StreamParserFactory factory;
+    private File statusFile;
 
-	// all others are created on the fly
-	private Map<Long, PendingMessage> ackBuffer = Maps.newTreeMap();
-	private long messageId = 0;
+    // all others are created on the fly
+    private Map<Long, PendingMessage> ackBuffer = Maps.newTreeMap();
+    private long messageId = 0;
 
-	// how often should we save our state?
-	private long tuplesPerCheckpoint = 100;
+    // how often should we save our state?
+    private long tuplesPerCheckpoint = 100;
 
-	// time between forced checkpoints in seconds
-	private double checkPointIntervalSeconds = 1.0;
-	private Queue<PendingMessage> pendingReplays = Lists.newLinkedList();
+    // time between forced checkpoints in seconds
+    private double checkPointIntervalSeconds = 1.0;
+    private Queue<PendingMessage> pendingReplays = Lists.newLinkedList();
 
-	private StreamParser parser = null;
-	private SpoutOutputCollector collector;
-	private double nextCheckPointTime = 0;
+    private StreamParser parser = null;
+    private SpoutOutputCollector collector;
+    private double nextCheckPointTime = 0;
 
-	public TailSpout(StreamParserFactory factory, File statusFile)
-			throws IOException {
-		this.factory = factory;
-		scanner = SpoutState.restoreState(pendingReplays, statusFile);
-	}
+    public TailSpout(StreamParserFactory factory, File statusFile) throws IOException {
+        this.factory = factory;
+        scanner = SpoutState.restoreState(pendingReplays, statusFile);
+    }
 
-	public TailSpout(StreamParserFactory factory, File statusFile,
-			File inputDirectory, final Pattern inputFileNamePattern) {
-		this.factory = factory;
-		this.statusFile = statusFile;
-		scanner = new DirectoryScanner(inputDirectory, inputFileNamePattern);
-	}
+    public TailSpout(StreamParserFactory factory, File statusFile, File inputDirectory, final Pattern inputFileNamePattern) throws IOException {
+        this.factory = factory;
+        this.statusFile = statusFile;
+        if (statusFile.exists()) {
+            scanner = new DirectoryScanner(inputDirectory, inputFileNamePattern);
+        } else {
+            scanner = SpoutState.restoreState(pendingReplays, statusFile);
+        }
+    }
 
-	public boolean setReliableMode(boolean replayFailedMessages) {
-		boolean old = this.replayFailedMessages;
-		this.replayFailedMessages = replayFailedMessages;
-		return old;
-	}
+    public boolean setReliableMode(boolean replayFailedMessages) {
+        return this.replayFailedMessages.getAndSet(replayFailedMessages);
+    }
 
-	public void setTuplesPerCheckpoint(long tuplesPerCheckpoint) {
-		this.tuplesPerCheckpoint = tuplesPerCheckpoint;
-	}
+    public void setTuplesPerCheckpoint(long tuplesPerCheckpoint) {
+        this.tuplesPerCheckpoint = tuplesPerCheckpoint;
+    }
 
-	public void setCheckPointIntervalSeconds(double checkPointIntervalSeconds) {
-		this.checkPointIntervalSeconds = checkPointIntervalSeconds;
-	}
+    public void setCheckPointIntervalSeconds(double checkPointIntervalSeconds) {
+        this.checkPointIntervalSeconds = checkPointIntervalSeconds;
+    }
 
-	@Override
-	public void declareOutputFields(OutputFieldsDeclarer outputFieldsDeclarer) {
-		outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
-	}
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer outputFieldsDeclarer) {
+        outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
+    }
 
-	@SuppressWarnings("rawtypes")
-	@Override
-	public void open(Map map, TopologyContext context,
-			SpoutOutputCollector collector) {
-		this.collector = collector;
-	}
+    @SuppressWarnings("rawtypes")
+    @Override
+    public void open(Map map, TopologyContext context,
+                     SpoutOutputCollector collector) {
+        this.collector = collector;
+    }
 
-	@Override
-	public void close() {
-		SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
-	}
+    @Override
+    public void close() {
+        SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
+    }
 
-	@Override
-	public void deactivate() {
-		SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
-	}
+    @Override
+    public void deactivate() {
+        SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
+    }
 
-	@Override
-	public void nextTuple() {
-		if (currentInput == null) {
-			currentInput = openNextInput();
-		}
+    @Override
+    public void nextTuple() {
+        if (currentInput == null) {
+            currentInput = openNextInput();
+        }
 
-		// TODO need to persist current reading state somewhere
-		while (currentInput != null) {
-			// read a record
-			long position = parser.currentOffset();
-			List<Object> r = parser.nextRecord();
+        try {
+            while (currentInput != null) {
+                // read a record
+                long position = parser.currentOffset();
+                List<Object> r = parser.nextRecord();
 
-			// assert currentInput != null
-			if (r == null) {
-				// reached end of current file
-				// (currentInput != null && r == null) so we enter loop at least
-				// once
-				while (currentInput != null && r == null) {
-					currentInput = openNextInput();
+                // assert currentInput != null
+                if (r == null) {
+                    // reached end of current file
+                    // (currentInput != null && r == null) so we enter loop at least
+                    // once
+                    while (currentInput != null && r == null) {
+                        currentInput = openNextInput();
 
-					// assert r == null
-					if (currentInput != null) {
-						position = parser.currentOffset();
-						r = parser.nextRecord();
-					}
-					// r != null => currentInput != null
-				}
-				// post: r != null iff currentInput != null
-			}
-			// post: (r != null iff currentInput != null) || (r != null)
-			// post: (r == null => currentInput == null)
+                        // assert r == null
+                        if (currentInput != null) {
+                            position = parser.currentOffset();
+                            r = parser.nextRecord();
+                        }
+                        // r != null => currentInput != null
+                    }
+                    // post: r != null iff currentInput != null
+                }
+                // post: (r != null iff currentInput != null) || (r != null)
+                // post: (r == null => currentInput == null)
 
-			if (r != null) {
-				if (replayFailedMessages) {
-					collector.emit(r, messageId);
-					ackBuffer.put(messageId,
-							new PendingMessage(scanner.getLiveFile(), position,
-									r));
-					messageId++;
-				} else {
-					collector.emit(r);
-				}
-				if (messageId % tuplesPerCheckpoint == 0
-						|| System.nanoTime() / 1e9 > nextCheckPointTime) {
-					SpoutState.recordCurrentState(ackBuffer, scanner, parser,
-							statusFile);
-					nextCheckPointTime = System.nanoTime() / 1e9
-							+ checkPointIntervalSeconds;
-				}
-				break;
-			}
-		}
-		// exit only when all files have been processed completely
-	}
+                if (r != null) {
+                    if (replayFailedMessages.get()) {
+                        collector.emit(r, messageId);
+                        ackBuffer.put(messageId, new PendingMessage(scanner.getLiveFile(), position, r));
+                        messageId++;
+                    } else {
+                        collector.emit(r);
+                    }
 
-	private FileInputStream openNextInput() {
-		PendingMessage next = pendingReplays.poll();
-		while (next != null) {
-			if (next.getFile().exists()) {
-				return scanner.forceInput(next.getFile(), next.getOffset());
-			} else {
-				log.error("Replay file {} has disappeared", next.getFile());
-			}
-			next = pendingReplays.poll();
-		}
+                    // persist current reading state if it is time
+                    if (messageId % tuplesPerCheckpoint == 0 || System.nanoTime() / 1e9 > nextCheckPointTime) {
+                        SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
+                        nextCheckPointTime = System.nanoTime() / 1e9 + checkPointIntervalSeconds;
+                    }
+                    break;
+                }
+            }
+            // exit only when all files have been processed completely
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
-		// look for a new file
-		FileInputStream r = scanner.nextInput();
+    private FileInputStream openNextInput() {
+        PendingMessage next = pendingReplays.poll();
+        while (next != null) {
+            if (next.getFile().exists()) {
+                return scanner.forceInput(next.getFile(), next.getOffset());
+            } else {
+                log.error("Replay file {} has disappeared", next.getFile());
+            }
+            next = pendingReplays.poll();
+        }
+
+        // look for a new file
+        FileInputStream r = scanner.nextInput();
         if (r != null) {
             parser = factory.createParser(r);
             return r;
@@ -209,28 +209,28 @@ public class TailSpout extends BaseRichSpout {
         }
     }
 
-	@Override
-	public void ack(Object messageId) {
-		if (messageId instanceof Long) {
-			if (ackBuffer.remove(messageId) == null) {
-				log.error("Unknown messageId {}", messageId);
-			}
-		} else {
-			log.error("Incorrect message id {}", messageId);
-		}
-	}
+    @Override
+    public void ack(Object messageId) {
+        if (messageId instanceof Long) {
+            if (ackBuffer.remove(messageId) == null) {
+                log.error("Unknown messageId {}", messageId);
+            }
+        } else {
+            log.error("Incorrect message id {}", messageId);
+        }
+    }
 
-	@Override
-	public void fail(Object messageId) {
-		if (messageId instanceof Long) {
-			final PendingMessage message = ackBuffer.get(messageId);
-			if (message != null) {
-				collector.emit(message.getTuple(), messageId);
-			} else {
-				log.error("Unknown message id {}", messageId);
-			}
-		} else {
-			log.error("Incorrect message id {}", messageId);
-		}
-	}
+    @Override
+    public void fail(Object messageId) {
+        if (messageId instanceof Long) {
+            final PendingMessage message = ackBuffer.get(messageId);
+            if (message != null) {
+                collector.emit(message.getTuple(), messageId);
+            } else {
+                log.error("Unknown message id {}", messageId);
+            }
+        } else {
+            log.error("Incorrect message id {}", messageId);
+        }
+    }
 }
