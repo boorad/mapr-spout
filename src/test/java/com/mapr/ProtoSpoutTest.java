@@ -1,15 +1,21 @@
 package com.mapr;
 
+import backtype.storm.spout.SpoutOutputCollector;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.mapr.franz.catcher.wire.MessageQueue;
+import com.mapr.franz.server.ProtoLogger;
 import com.mapr.storm.streamparser.StreamParser;
 import org.junit.Test;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static junit.framework.Assert.*;
 
@@ -90,6 +96,59 @@ public class ProtoSpoutTest {
             fail("Should have gotten tired of waiting for final bytes");
         } catch (IOException e) {
             assertTrue(e.getMessage().startsWith("Cannot read message"));
+        }
+    }
+
+    @Test
+    public void testFileRollover() throws IOException {
+        Path homeDir = Files.createTempDirectory("logger");
+        Path statusPath = Files.createTempFile("status", "dat");
+
+        ProtoLogger p = new ProtoLogger(homeDir.toString());
+        p.setMaxLogFile(500);
+
+        for (int i = 0; i < 1000; i++) {
+            p.write("topic-1", ByteString.copyFromUtf8(i + ""));
+        }
+
+        ProtoSpout ps = new ProtoSpout(new ProtoSpout.TupleParser() {
+            @Override
+            public List<Object> parse(ByteString buffer) {
+                return Collections.<Object>singletonList(buffer.toStringUtf8());
+            }
+
+            @Override
+            public List<String> getOutputFields() {
+                throw new UnsupportedOperationException("Default operation");
+            }
+        }, statusPath.toFile(), new File(homeDir.toFile(), "topic-1"), Pattern.compile("[0-9a-f]*"));
+
+        final List<List<Object>> tuples = Lists.newArrayList();
+        SpoutOutputCollector collector = new SpoutOutputCollector(null) {
+            @Override
+            public List<Integer> emit(List<Object> tuple) {
+                tuples.add(tuple);
+                return null;
+            }
+
+            @Override
+            public List<Integer> emit(List<Object> tuple, Object messageId) {
+                return emit(tuple);
+            }
+        };
+        ps.open(null, null, collector);
+
+
+        for (int i = 0; i < 1000; i++) {
+            ps.nextTuple();
+        }
+        assertEquals(1000, tuples.size());
+
+        Iterator<List<Object>> ix = tuples.iterator();
+        for (int i = 0; i < 1000; i++) {
+            List<Object> x = ix.next();
+            assertEquals(1, x.size());
+            assertEquals(i + "", x.get(0));
         }
     }
 
