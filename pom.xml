@@ -4,9 +4,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>mapr-spout</groupId>
-    <artifactId>mapr-spout</artifactId>
-    <version>0.1</version>
+    <groupId>mapr-storm</groupId>
+    <artifactId>mapr-storm</artifactId>
+    <version>0.2</version>
 
     <dependencies>
         <dependency>
@@ -160,4 +160,18 @@
             <url>http://twitter4j.org/maven2</url>
         </repository>
     </repositories>
+    <name>MapR / Storm connector</name>
+    <url>https://github.com/mapr/mapr-storm</url>
+    <description>A connector for MapR and Storm consisting of two components:
+
+1.  Franz - a Kafka-like API for logging messages to topics, materializing them onto disk in a MapR Cluster
+
+2.  TailSpout - a Storm spout implementation, gathering newly-arrived data from the end of a file and creating tuples for a storm topology</description>
+    <scm>
+      <url>https://github.com/mapr/mapr-storm</url>
+    </scm>
+    <organization>
+      <name>MapR Technologies, Inc.</name>
+      <url>http://mapr.com</url>
+    </organization>
 </project>
