@@ -2,6 +2,7 @@ package com.mapr.franz.server;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.Properties;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcController;
@@ -15,11 +16,11 @@ import com.mapr.franz.catcher.wire.Catcher;
 public class CatcherServiceImpl implements
         Catcher.CatcherService.BlockingInterface {
 
-    // TODO: configuration option
-    private final String basePath = "/tmp/mapr-spout-test";
+    private Properties props;
+    private final String BASE_DIRECTORY = "/tmp/mapr-storm";
 
     // TODO: replace with TopicObserver
-    private final GhettoTopicLogger logger = new GhettoTopicLogger(basePath);
+    private final GhettoTopicLogger logger;
 
     private final long serverId;
 
@@ -31,6 +32,9 @@ public class CatcherServiceImpl implements
     public CatcherServiceImpl(long serverId, ClusterState state) {
         this.serverId = serverId;
         this.state = state;
+        this.props = Server.loadProperties();
+        String basePath = props.getProperty("base.directory", BASE_DIRECTORY);
+        logger = new GhettoTopicLogger(basePath);
     }
 
     @Override
