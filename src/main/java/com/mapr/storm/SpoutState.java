@@ -11,6 +11,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.reflect.TypeToken;
+import com.mapr.storm.streamparser.StreamParser;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

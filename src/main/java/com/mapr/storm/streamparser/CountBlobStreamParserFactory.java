@@ -1,18 +1,17 @@
-package com.mapr.storm;
+package com.mapr.storm.streamparser;
 
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.mapr.storm.StreamParser;
-import com.mapr.storm.StreamParserFactory;
 
-public class TestStreamParserFactory implements StreamParserFactory {
+
+public class CountBlobStreamParserFactory implements StreamParserFactory {
 
 	private static final long serialVersionUID = 1064671716862931399L;
 
 	public StreamParser createParser(FileInputStream in) {
-		return new TestStreamParser(in);
+		return new CountBlobStreamParser(in);
 	}
 
 	public List<String> getOutputFields() {

@@ -139,7 +139,8 @@ public class ClusterState {
             if (hash < 0) {
                 hash += n;
             }
-            return new Target(status, generation, servers.get(cluster.get(hash)), hash != ourPosition);
+            Catcher.Server s = servers.get(cluster.get(hash));
+            return new Target(status, generation, s, hash != ourPosition);
         }
     }
 
@@ -277,6 +278,7 @@ public class ClusterState {
             } catch (InterruptedException e) {
                 // ignore
             }
+		attempts++;
         }
         status = Status.FAILED;
         logger.error("Cannot read cluster state");
@@ -333,10 +335,12 @@ public class ClusterState {
                     retryDelay = maxRetryDelay;
                 }
                 Thread.sleep(retryDelay);
-            } catch (KeeperException e) {
+            } catch (KeeperException.NodeExistsException e) {
                 status = Status.FAILED;
                 logger.error("Failed to establish state, giving up", e);
                 throw new IOException(String.format("Server status node for server %d already exists in Zookeeper", myUniqueId), e);
+            } catch (KeeperException e) {
+                throw new IOException("Strange ZK exception", e);
             }
         }
     }

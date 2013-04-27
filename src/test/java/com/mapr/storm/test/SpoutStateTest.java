@@ -1,4 +1,4 @@
-package com.mapr.storm;
+package com.mapr.storm.test;
 
 import static org.junit.Assert.assertEquals;
 
@@ -16,6 +16,10 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
+import com.mapr.storm.DirectoryScanner;
+import com.mapr.storm.PendingMessage;
+import com.mapr.storm.SpoutState;
+import com.mapr.storm.streamparser.StreamParser;
 
 /**
  * Test state handling.

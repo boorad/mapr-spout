@@ -316,7 +316,9 @@ public class Client {
                                 for (int i = 0; i < n; i++) {
                                     Catcher.Host host = r.getHost(i);
                                     HostPort pi = new HostPort(host.getHostName(), host.getPort());
+                                    logger.info("Discovered host at {}:{}", host.getHostName(), host.getPort());
                                     if (!attempted.contains(pi)) {
+                                        logger.info("Unknown host, adding to discovered list.");
                                         discovered.add(pi);
                                     }
                                     attempted.add(server);
@@ -324,7 +326,9 @@ public class Client {
                                 for (Catcher.Server otherServer : r.getClusterList()) {
                                     for (Catcher.Host host : otherServer.getHostList()) {
                                         HostPort pi = new HostPort(host.getHostName(), host.getPort());
+                                        logger.info("Discovered host at {}:{} via other server", host.getHostName(), host.getPort());
                                         if (!attempted.contains(pi)) {
+                                            logger.info("Unknown host, adding to discovered list.");
                                             discovered.add(pi);
                                         }
                                         attempted.add(server);
@@ -332,7 +336,7 @@ public class Client {
                                 }
                             } else {
                                 serverBlackList.add(server);
-                                logger.warn("Cannot connect to {}", server);
+                                logger.warn("Blacklisting {}", server);
                             }
                         }
                     } catch (ServiceException e) {

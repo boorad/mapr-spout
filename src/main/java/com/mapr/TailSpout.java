@@ -8,10 +8,11 @@ import backtype.storm.tuple.Fields;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.mapr.storm.DirectoryScanner;
-import com.mapr.storm.StreamParser;
-import com.mapr.storm.StreamParserFactory;
 import com.mapr.storm.PendingMessage;
 import com.mapr.storm.SpoutState;
+import com.mapr.storm.streamparser.StreamParser;
+import com.mapr.storm.streamparser.StreamParserFactory;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -200,9 +201,13 @@ public class TailSpout extends BaseRichSpout {
 
 		// look for a new file
 		FileInputStream r = scanner.nextInput();
-		parser = factory.createParser(r);
-		return r;
-	}
+        if (r != null) {
+            parser = factory.createParser(r);
+            return r;
+        } else {
+            return currentInput;
+        }
+    }
 
 	@Override
 	public void ack(Object messageId) {

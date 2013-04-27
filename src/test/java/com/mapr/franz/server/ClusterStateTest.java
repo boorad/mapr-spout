@@ -48,6 +48,7 @@ public class ClusterStateTest {
 
     @Test
     public void testBasics() throws IOException, InterruptedException {
+	log.info("testBasics()");
         final Map<String, byte[]> data = Maps.newConcurrentMap();
         List<Watcher> watchers = Lists.newArrayList();
 
@@ -81,6 +82,7 @@ public class ClusterStateTest {
      */
     @Test
     public void clusterMemberPropagation() throws IOException, InterruptedException {
+	log.info("clusterMemberPropagation()");
         final Map<String, byte[]> data = Collections.synchronizedSortedMap(Maps.<String, byte[]>newTreeMap());
         List<Watcher> watchers = Lists.newArrayList();
 
@@ -145,6 +147,7 @@ public class ClusterStateTest {
 
     @Test
     public void testExit() throws IOException, InterruptedException {
+	log.info("testExit()");
         final Map<String, byte[]> data = Collections.synchronizedSortedMap(Maps.<String, byte[]>newTreeMap());
         List<Watcher> watchers = Lists.newArrayList();
 
@@ -171,8 +174,11 @@ public class ClusterStateTest {
         Multiset<String> counts = HashMultiset.create();
         for (int j = 0; j < 10; j++) {
             for (int i = 0; i < 1000; i++) {
+		// This seems to me to be an invalid use of the API.  calling any method after exit() should result in failure.
+		// Expecting that we get any kind of meaningful results out of cs1 seems incorrect.  It should at most throw an
+		// exception saying it was already closed.
                 ClusterState.Target k = cs1.directTo(i + "");
-                assertEquals(ClusterState.Status.LIVE, k.getStatus());
+                assertEquals(ClusterState.Status.FAILED, k.getStatus());
                 counts.add("i=" + i + ", to=" + k.getServer());
 
                 redirect1 += k.isRedirect() ? 1 : 0;
@@ -195,6 +201,7 @@ public class ClusterStateTest {
 
     @Test
     public void testIdCollision() throws IOException, InterruptedException {
+	log.info("testIdCollision()");
         final Map<String, byte[]> data = Collections.synchronizedSortedMap(Maps.<String, byte[]>newTreeMap());
         List<Watcher> watchers = Lists.newArrayList();
 
@@ -238,6 +245,7 @@ public class ClusterStateTest {
 
     @Test
     public void testDisconnect() throws IOException, InterruptedException {
+	log.info("testDisconnect()");
         final Map<String, byte[]> data = Collections.synchronizedMap(Maps.<String, byte[]>newTreeMap());
         List<Watcher> watchers = Lists.newArrayList();
 
@@ -339,6 +347,7 @@ public class ClusterStateTest {
      */
     @Test
     public void testExpiration() throws IOException, InterruptedException {
+	log.info("testExpiration()");
         ZKS zks = new ZKS();
         // two servers should find out about each other
         Server.Info info1 = new Server.Info(23, Lists.newArrayList(new Client.HostPort("host1", 9090)));

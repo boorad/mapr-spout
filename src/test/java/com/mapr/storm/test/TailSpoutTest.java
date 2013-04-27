@@ -1,4 +1,4 @@
-package com.mapr.storm;
+package com.mapr.storm.test;
 
 import static org.junit.Assert.assertEquals;
 
@@ -18,6 +18,8 @@ import backtype.storm.task.TopologyContext;
 
 import com.google.common.io.Files;
 import com.mapr.TailSpout;
+import com.mapr.storm.streamparser.CountBlobStreamParserFactory;
+import com.mapr.storm.streamparser.StreamParserFactory;
 
 public class TailSpoutTest {
 
@@ -38,7 +40,7 @@ public class TailSpoutTest {
         statusDir = Files.createTempDir();
 
         // set up spout
-        StreamParserFactory spf = new TestStreamParserFactory();
+        StreamParserFactory spf = new CountBlobStreamParserFactory();
         File statusFile = new File(statusDir + "/status");
         Pattern inPattern = Pattern.compile("x-.*");
         TailSpout spout = new TailSpout(spf, statusFile, tempDir, inPattern);

@@ -13,6 +13,16 @@ When running in reliable mode, tuples are held in memory until they are acknowle
 
 For right now, there is no driver for the spout.  All that is in place and tested are the DirectoryScanner and the SpoutState classes.
 
+How to Run a Catcher Server
+==========
+
+To run a catcher, you need a running Zookeeper.  Suppose you have downloaded zookeeper and are running a single node on port 2081.  To compile and running a Catcher, you need to do this
+
+    mvn package -DskipTests
+    java -cp target/mapr-spout-0.1-SNAPSHOT-jar-with-dependencies.jar com.mapr.franz.server.Server localhost 9004 localhost:2081
+
+This will run a catcher that uses the Zookeeper server running on the localhost to store configuration information about the "cluster" of Catchers consisting of just this server.  The catcher will be accessible on port 9004.
+
 Data Collection Architecture
 ==========
 
