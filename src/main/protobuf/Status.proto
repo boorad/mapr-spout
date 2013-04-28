@@ -1,0 +1,91 @@
+/*
+ * Copyright MapR Technologies, $year
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+/**
+ * Definitions for status update messages from worker processes.
+ * A log composed using this format can be parsed by the process control
+ * framework in order to propagate status info back into a larger framework.
+ * Such a log can also be used for distributed process post-mortem analysis.
+ */
+
+option java_generic_services = true;
+option java_package = "com.mapr.workGroup";
+option java_outer_classname = "ProcessLog";
+
+/**
+ * the basic message is a union of the other kinds of message.  By convention,
+ * only one of these alternatives is actually used.
+ */
+message LogUpdate {
+    optional ProcessStarted start = 1;
+    optional ProgressNote progress = 2;
+    optional OpaqueNote opaque = 3;
+    optional ProcessCompleted complete = 4;
+}
+
+/**
+ * When the process starts, it should record the start time and it's own name and possibly an
+ * id (in case the log is shared).
+ */
+message ProcessStarted {
+    optional int32 id = 1;
+    optional int64 time = 2;
+    optional string name = 3;
+}
+
+/**
+ * As progress is made, status values can be recorded.
+ */
+message ProgressNote {
+    optional int32 id = 1;
+    optional int64 time = 2;
+    repeated KeyValue count = 3;
+}
+
+/**
+ * The application may need to have its own log data that the framework doesn't understand.
+ */
+message OpaqueNote {
+    optional int32 id = 1;
+    optional int64 time = 2;
+    repeated bytes data = 3;
+}
+
+/**
+ * Each key value pair can increment a value or can set it.
+ */
+message KeyValue {
+    optional int32 id = 1;
+    optional string key = 2;
+    // increment
+    optional int32 integerIncrement = 3;
+    optional double doubleIncrement = 4;
+    // set value absolutely
+    optional int64 ivalue = 5;
+    optional double dvalue = 6;
+}
+
+/**
+ * This message should be included when the process completes.
+ */
+message ProcessCompleted {
+    optional int32 id = 1;
+    repeated KeyValue count = 2;
+    optional int32 exitStatus = 3;
+    optional string stackTrace = 4;
+    optional string exitMessage = 5;
+}

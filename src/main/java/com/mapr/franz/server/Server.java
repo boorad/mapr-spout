@@ -133,7 +133,7 @@ public class Server {
         }
         ClusterState zkState = new ClusterState(zk_str, FRANZ_BASE, new Info(serverId, addresses));
 
-        bootstrap.getRpcServiceRegistry().registerBlockingService(Catcher.CatcherService.newReflectiveBlockingService(new CatcherServiceImpl(serverId, zkState)));
+        bootstrap.getRpcServiceRegistry().registerBlockingService(Catcher.CatcherService.newReflectiveBlockingService(new com.mapr.franz.server.CatcherServiceImpl(serverId, zkState)));
 
         //If you want to track the RPC peering events with clients, use a RpcClientConnectionRegistry or a TcpConnectionEventListener for TCP connection events. This is the mechanism you can use to "discover" RPC clients before they "call" any service.
         TcpConnectionEventListener listener = new TcpConnectionEventListener() {
