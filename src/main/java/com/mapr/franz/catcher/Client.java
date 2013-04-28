@@ -13,12 +13,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -36,7 +32,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p/>
  * When we send a log message, the response may include a redirect to a different server.
  * If so, we make sure that we have connected to all forms of that server's address and
- * cache that for later.
+ * cache that for later.  Then we retry the send to the new server.  We may also cache that
+ * message for later retry.
  * <p/>
  * If a log request results in an error, we try to get rid of the connection that caused
  * us this grief.  This might ultimately cause us to forget a host or even a cache entry,
@@ -107,6 +104,41 @@ public class Client {
                 return new HostPort(input);
             }
         }));
+
+        // every so often, we bring back a black-listed server
+        ScheduledExecutorService background = Executors.newSingleThreadScheduledExecutor();
+        background.scheduleWithFixedDelay(new Runnable() {
+            @Override
+            public void run() {
+                if (serverBlackList.size() > 0) {
+                    serverBlackList.elementSet().remove(serverBlackList.iterator().next());
+                }
+            }
+        }, 10, 2, TimeUnit.SECONDS);
+
+        Queue<Object> retry = Queues.newConcurrentLinkedQueue();
+        background.scheduleWithFixedDelay(new Runnable() {
+            @Override
+            public void run() {
+                Object message = retry.poll();
+                if (message != null) {
+                    sendMessage(message.topic, message.content);
+                }
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+
+    }
+
+    private static class MessageRetry {
+        String topic;
+        String content;
+        long firstSendTime = System.nanoTime() / 1000000;
+        int retryCount = 0;
+
+        private MessageRetry(String topic, String content) {
+            this.content = content;
+            this.topic = topic;
+        }
     }
 
     public void sendMessage(String topic, String message) throws IOException, ServiceException {
@@ -173,13 +205,16 @@ public class Client {
                 break;
             }
         }
+        // TODO if this was a redirect, we should send it there (or do it in sendInternal)
 
         // if that didn't do the job, try all other servers in random order
         if (!done) {
+            // TODO we shouldn't do this in a client redirects world.  SHould just let the retry have it.
             List<CatcherConnection> tmp = Lists.newArrayList(allConnections);
             Collections.shuffle(tmp);
             for (CatcherConnection s : tmp) {
-                if (sendInternal(s, topic, messageId, request, pendingConnectionRemovals)) {
+                done = sendInternal(s, topic, messageId, request, pendingConnectionRemovals);
+                if (done) {
                     break;
                 }
             }
@@ -248,6 +283,7 @@ public class Client {
                         }
                         redirectCount++;
                     }
+                    // TODO send message to redirect server
                 } else {
                     Long id = topicMap.get(topic);
                     if (id == null || id != r.getServerId()) {
