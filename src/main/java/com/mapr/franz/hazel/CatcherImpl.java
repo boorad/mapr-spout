@@ -16,12 +16,6 @@
 
 package com.mapr.franz.hazel;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.RpcController;
@@ -29,20 +23,25 @@ import com.google.protobuf.ServiceException;
 import com.hazelcast.core.DistributedTask;
 import com.hazelcast.core.HazelcastInstance;
 import com.mapr.franz.catcher.wire.Catcher;
-import com.mapr.franz.server.ClusterState;
-import com.mapr.franz.server.GhettoTopicLogger;
+import com.mapr.franz.server.ProtoLogger;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 
 /**
  * The kinda broken server.
  */
-public class CatcherImpl implements
-        Catcher.CatcherService.BlockingInterface {
+public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
 
     // TODO: configuration option
     private final String basePath = "/tmp/mapr-spout-test";
 
     // TODO: replace with proto based logger
-    private final GhettoTopicLogger logger = new GhettoTopicLogger(basePath);
+    private final ProtoLogger logger;
 
     private final long serverId;
     private Server us;
@@ -51,10 +50,11 @@ public class CatcherImpl implements
     // TODO implement some sort of statistics that records (a) number of
     // clients, (b) transactions per topic, (c) bytes per topic
 
-    public CatcherImpl(Server us, HazelcastInstance instance) {
+    public CatcherImpl(Server us, HazelcastInstance instance) throws FileNotFoundException {
         this.serverId = us.getProto().getServerId();
         this.us = us;
         this.instance = instance;
+        logger = new ProtoLogger(basePath);
     }
 
     @Override
@@ -71,9 +71,9 @@ public class CatcherImpl implements
 
         return r.build();
     }
-    public static class LogMessage extends ProtoSerializable<Catcher.LogMessage>
-        implements Callable<LogResponse>
-    {
+
+    public class LogMessage extends ProtoSerializable<Catcher.LogMessage>
+            implements Callable<LogResponse> {
         public LogMessage(Catcher.LogMessage request) {
             this.data = request;
         }
@@ -82,13 +82,18 @@ public class CatcherImpl implements
          * Computes a result, or throws an exception if unable to do so.
          *
          * @return computed result
-         * @throws Exception if unable to compute a result
          */
         @Override
-        public LogResponse call() throws Exception {
+        public LogResponse call() throws IOException {
             ByteString payload = data.getPayload();
             String topic = data.getTopic();
             logger.write(topic, payload);
+            return new LogResponse(
+                    Catcher.LogMessageResponse.newBuilder()
+                            .setServerId(serverId)
+                            .setSuccessful(true)
+                            .build()
+            );
         }
 
         @Override
@@ -112,39 +117,25 @@ public class CatcherImpl implements
     @Override
     public Catcher.LogMessageResponse log(RpcController controller,
                                           Catcher.LogMessage request) throws ServiceException {
+        try {
+            // forward request, possibly to ourselves via HazelCast
+            String topic = request.getTopic();
+            DistributedTask<LogResponse> task = new DistributedTask<>(new LogMessage(request), topic);
+            instance.getExecutorService().execute(task);
 
-        String topic = request.getTopic();
-
-        Catcher.LogMessageResponse.Builder r = Catcher.LogMessageResponse
-                .newBuilder().setServerId(serverId).setSuccessful(true);
-
-        // forward request, possibly to ourselves via HazelCast
-        DistributedTask<LogResponse> task = new DistributedTask<LogResponse>(new LogMessage(request), topic);
-        ExecutorService executorService = instance.getExecutorService();
-        Future<LogResponse> z = executorService.submit(task);
-
-        ClusterState.Target directTo = state.directTo(topic);
-
-        if (directTo.getStatus() == ClusterState.Status.LIVE) {
-            if (directTo.isRedirect()) {
-                // TODO actually forward request to other server
-                r.getRedirectBuilder().setTopic(topic)
-                        .setServer(directTo.getServer()).build();
-            }
-        } else {
-            ClusterStateException e = new ClusterStateException(
-                    "Can't handle request ... can't see rest of cluster");
+            return task.get().data;
+        } catch (InterruptedException | ExecutionException e) {
             StringWriter s = new StringWriter();
-
             PrintWriter pw = new PrintWriter(s);
-            e.printStackTrace(pw);
+            new ClusterStateException("Can't handle request ... can't see rest of cluster", e).printStackTrace(pw);
             pw.close();
-
-            r.setSuccessful(false).setBackTrace(s.toString());
+            return Catcher.LogMessageResponse
+                    .newBuilder()
+                    .setServerId(serverId)
+                    .setSuccessful(false)
+                    .setBackTrace(s.toString())
+                    .build();
         }
-
-
-        return r.build();
     }
 
     @Override
@@ -156,8 +147,8 @@ public class CatcherImpl implements
     private class ClusterStateException extends Exception {
         private static final long serialVersionUID = -1473457816312999824L;
 
-        public ClusterStateException(String msg) {
-            super(msg);
+        public ClusterStateException(String msg, Throwable cause) {
+            super(msg, cause);
         }
     }
 }
