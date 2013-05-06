@@ -21,6 +21,7 @@ import backtype.storm.task.TopologyContext;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import com.mapr.TailSpout;
+import com.mapr.storm.Utils;
 import com.mapr.storm.streamparser.CountBlobStreamParserFactory;
 import com.mapr.storm.streamparser.StreamParserFactory;
 import org.apache.commons.io.FileUtils;
@@ -41,14 +42,14 @@ public class TailSpoutTest {
     private File tempDir, statusDir;
 
     @After
-    public void cleanupFiles() {
+    public void cleanupFiles() throws IOException {
         File[] files = tempDir.listFiles();
         if (files != null) {
             for (File x : files) {
                 assertTrue(x.delete());
             }
-            assertTrue(tempDir.delete());
-            assertTrue(statusDir.delete());
+            Utils.deleteRecursively(tempDir);
+            Utils.deleteRecursively(statusDir);
         }
     }
 

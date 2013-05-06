@@ -27,6 +27,7 @@ import com.google.common.collect.Sets;
 import com.google.common.io.Files;
 import com.mapr.franz.catcher.Client;
 import com.mapr.franz.catcher.wire.Catcher;
+import com.mapr.storm.Utils;
 import mockit.Mock;
 import mockit.MockUp;
 import org.apache.zookeeper.CreateMode;
@@ -49,10 +50,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.file.FileVisitResult;
-import java.nio.file.FileVisitor;
-import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
@@ -416,50 +413,11 @@ public class ClusterStateTest {
             zks.shutdown();
             waitForServerDown(PORT, 1000);
 
-            deleteRecursively(logdir);
+            Utils.deleteRecursively(logdir);
             assertFalse(logdir.exists());
 
-            deleteRecursively(snapdir);
+            Utils.deleteRecursively(snapdir);
             assertFalse(snapdir.delete());
-        }
-
-        /**
-         * Recursive delete that handles symlinks and such correctly.
-         * @param f File or directory to recursively delete
-         * @return The starting file
-         * @throws IOException
-         */
-        private Path deleteRecursively(File f) throws IOException {
-            return java.nio.file.Files.walkFileTree(f.toPath(), new FileVisitor<Path>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    if (attrs.isRegularFile()) {
-                        assertTrue(file.toFile().delete());
-                        return FileVisitResult.CONTINUE;
-                    } else if (attrs.isDirectory()) {
-                        return FileVisitResult.CONTINUE;
-                    } else {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-
-                }
-
-                @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
-                    throw new UnsupportedOperationException("Default operation");
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                    assertTrue(dir.toFile().delete());
-                    return FileVisitResult.CONTINUE;
-                }
-            });
         }
 
         public String connectString() {
