@@ -17,15 +17,15 @@
 package com.mapr;
 
 import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
 import com.mapr.franz.catcher.wire.MessageQueue;
 import com.mapr.storm.streamparser.StreamParser;
 import com.mapr.storm.streamparser.StreamParserFactory;
 
+import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.channels.FileChannel;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -61,13 +61,12 @@ public class ProtoSpout extends TailSpout {
             return parser.getOutputFields();
         }
 
-        private class MessageParser extends StreamParser {
-            private InputStream in;
+        protected class MessageParser extends StreamParser {
+            private DataInputStream in;
             private final FileChannel channel;
-            private int errors = 0;
 
             public MessageParser(FileInputStream in) {
-                this.in = in;
+                this.in = new DataInputStream(in);
                 this.channel = in.getChannel();
             }
 
@@ -78,33 +77,19 @@ public class ProtoSpout extends TailSpout {
 
             @Override
             public List<Object> nextRecord() throws IOException {
-                MessageQueue.Message m;
-                while (true) {
-                    long start = channel.position();
-                    try {
-                        m = MessageQueue.Message.parseDelimitedFrom(in);
-                        errors = 0;
-                        break;
-                    } catch (InvalidProtocolBufferException e) {
-                        errors++;
-                        channel.position(start);
-                        if (errors < 5) {
-                            return null;
-                        } else if (errors < 10) {
-                            try {
-                                Thread.sleep(10);
-                            } catch (InterruptedException e1) {
-                                // ignore
-                            }
-                        } else {
-                            throw new IOException("Cannot read message from queue");
-                        }
+                long start = channel.position();
+                try {
+                    if (in.available() >= 4) {
+                        int n = in.readInt();
+                        byte[] buf = new byte[n];
+                        in.readFully(buf);
+                        MessageQueue.Message m = MessageQueue.Message.parseFrom(buf);
+                        return parser.parse(m.getPayload());
+                    } else {
+                        return null;
                     }
-                }
-
-                if (m != null) {
-                    return parser.parse(m.getPayload());
-                } else {
+                } catch (EOFException e) {
+                    channel.position(start);
                     return null;
                 }
             }

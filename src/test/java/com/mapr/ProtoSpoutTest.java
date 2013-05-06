@@ -40,7 +40,7 @@ public class ProtoSpoutTest {
     public void testPartialRecord() throws IOException {
         // build a file with 2 and a half records
         File file = Files.createTempFile("foo-", ".data").toFile();
-        FileOutputStream out = new FileOutputStream(file);
+        DataOutputStream out = new DataOutputStream(new FileOutputStream(file));
         byte[] bytes = writePartialFile(out);
 
         // now verify we read 2 reads cleanly but hold off on the third
@@ -82,7 +82,7 @@ public class ProtoSpoutTest {
         assertNull(t);
 
         // write the remainder now
-        out.write(bytes, 10, bytes.length - 10);
+        out.write(bytes, 6, bytes.length - 6);
 
         // so that the repeated read succeeds
         t = parser.nextRecord();
@@ -95,24 +95,6 @@ public class ProtoSpoutTest {
         assertNull(parser.nextRecord());
 
         out.close();
-
-        out = new FileOutputStream(file);
-        parser = factory.createParser(new FileInputStream(file));
-
-        writePartialFile(out);
-        t = parser.nextRecord();
-        assertNotNull(t);
-        t = parser.nextRecord();
-        assertNotNull(t);
-        try {
-            for (int i = 0; i < 11; i++) {
-                t = parser.nextRecord();
-                assertNull(t);
-            }
-            fail("Should have gotten tired of waiting for final bytes");
-        } catch (IOException e) {
-            assertTrue(e.getMessage().startsWith("Cannot read message"));
-        }
     }
 
     @Test
@@ -170,34 +152,32 @@ public class ProtoSpoutTest {
         }
     }
 
-    private byte[] writePartialFile(FileOutputStream out) throws IOException {
+    private byte[] writePartialFile(DataOutputStream out) throws IOException {
         MessageQueue.Message m1 = MessageQueue.Message.newBuilder()
                 .setTime(1)
                 .setPayload(ByteString.copyFromUtf8("test 1"))
                 .build();
 
-        m1.writeDelimitedTo(out);
+        out.writeInt(m1.getSerializedSize());
+        m1.writeTo(out);
 
         MessageQueue.Message m2 = MessageQueue.Message.newBuilder()
                 .setTime(2)
                 .setPayload(ByteString.copyFromUtf8("test 2"))
                 .build();
 
-        m2.writeDelimitedTo(out);
+        out.writeInt(m2.getSerializedSize());
+        m2.writeTo(out);
 
         MessageQueue.Message m3 = MessageQueue.Message.newBuilder()
                 .setTime(3)
                 .setPayload(ByteString.copyFromUtf8("test 3"))
                 .build();
 
-        ByteArrayOutputStream bos = new ByteArrayOutputStream(1000);
-        m3.writeDelimitedTo(bos);
+        byte[] bytes = m3.toByteArray();
 
-        bos.close();
-
-        byte[] bytes = bos.toByteArray();
-
-        out.write(bytes, 0, 10);
+        out.writeInt(bytes.length);
+        out.write(bytes, 0, 6);
         out.flush();
         return bytes;
     }

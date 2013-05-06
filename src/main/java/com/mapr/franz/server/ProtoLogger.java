@@ -65,12 +65,13 @@ public class ProtoLogger {
     }
 
     public void write(String topic, ByteString payload) throws IOException {
-        FileOutputStream out = getCurrentStream(topic);
-        MessageQueue.Message.newBuilder()
+        DataOutputStream out = new DataOutputStream(getCurrentStream(topic));
+        MessageQueue.Message msg = MessageQueue.Message.newBuilder()
                 .setTime(System.currentTimeMillis())
                 .setPayload(payload)
-                .build()
-                .writeDelimitedTo(out);
+                .build();
+        out.writeInt(msg.getSerializedSize());
+        msg.writeTo(out);
         out.flush();
     }
 

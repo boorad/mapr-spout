@@ -16,16 +16,22 @@
 
 package com.mapr.franz.server;
 
+import com.google.common.base.Splitter;
+import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
+import com.mapr.ProtoSpout;
 import com.mapr.franz.catcher.wire.MessageQueue;
 import org.junit.Test;
 
+import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertNotNull;
@@ -66,18 +72,30 @@ public class ProtoLoggerTest {
                 assertTrue(s.length() < 250);
                 assertEquals(String.format("%016x", offset), s.getName());
                 offset += s.length();
-                FileInputStream in = new FileInputStream(s);
-                MessageQueue.Message x = MessageQueue.Message.parseDelimitedFrom(in);
+
+                DataInputStream in = new DataInputStream(new FileInputStream(s));
+                MessageQueue.Message x = getMessage(in);
                 while (x != null) {
                     assertTrue(String.format("Time %d should be in [%d,%d]", x.getTime(), t0, t1), x.getTime() >= t0 && x.getTime() <= t1);
                     assertTrue(x.hasPayload());
                     double z = Double.parseDouble(new String(x.getPayload().toByteArray()));
                     assertTrue(z >= 1e9 && z < 1e9 + 4000);
-                    x = MessageQueue.Message.parseDelimitedFrom(in);
+                    x = getMessage(in);
                 }
             }
         }
-        // all but one of the directories have one short file
-        assertEquals(9, shortFileCount);
+        // only one of the directories have a short file
+        assertEquals(1, shortFileCount);
+    }
+
+    private MessageQueue.Message getMessage(DataInputStream in) throws IOException {
+        try {
+            int n = in.readInt();
+            byte[] buf = new byte[n];
+            in.readFully(buf);
+            return MessageQueue.Message.parseFrom(buf);
+        } catch (EOFException e) {
+            return null;
+        }
     }
 }
