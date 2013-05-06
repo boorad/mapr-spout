@@ -132,16 +132,16 @@ public class Client {
             }
         }, 10, 2, TimeUnit.SECONDS);
 
-        Queue<Object> retry = Queues.newConcurrentLinkedQueue();
-        background.scheduleWithFixedDelay(new Runnable() {
-            @Override
-            public void run() {
-                Object message = retry.poll();
-                if (message != null) {
-                    sendMessage(message.topic, message.content);
-                }
-            }
-        }, 1, 1, TimeUnit.SECONDS);
+//        Queue<MessageRetry> retry = Queues.newConcurrentLinkedQueue();
+//        background.scheduleWithFixedDelay(new Runnable() {
+//            @Override
+//            public void run() {
+//                MessageRetry message = retry.poll();
+//                if (message != null) {
+//                    sendMessage(message.topic, message.content);
+//                }
+//            }
+//        }, 1, 1, TimeUnit.SECONDS);
 
     }
 

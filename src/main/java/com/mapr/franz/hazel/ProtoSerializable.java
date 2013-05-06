@@ -25,18 +25,27 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 /**
- * Created with IntelliJ IDEA.
- * User: tdunning
- * Date: 4/26/13
- * Time: 5:30 PM
- * To change this template use File | Settings | File Templates.
+ * Provides Hazel-style serialization for Protobuf messages.  This lets protobuf messages
+ * to be stored in Hazel distributed data structures as well as passed as state in
+ * distributed tasks.
+ *
+ * To use this, all you have to do is define a parse() method to parse your particular
+ * brand of protobuf.
  */
 public abstract class ProtoSerializable<T extends GeneratedMessage> implements DataSerializable {
-    protected T data;
+    private T data;
+
+    // for use by serialization framework only
+    ProtoSerializable() {
+    }
+
+    public ProtoSerializable(T data) {
+        this.data = data;
+    }
 
     @Override
     public void writeData(DataOutput out) throws IOException {
-        byte[] bytes = data.toByteArray();
+        byte[] bytes = getProto().toByteArray();
         out.writeInt(bytes.length);
         out.write(bytes);
     }
@@ -45,7 +54,16 @@ public abstract class ProtoSerializable<T extends GeneratedMessage> implements D
     public void readData(DataInput in) throws IOException {
         int n = in.readInt();
         byte[] bytes = new byte[n];
+        in.readFully(bytes);
         data = parse(bytes);
+    }
+
+    public T getProto() {
+        return data;
+    }
+
+    protected void setProto(T proto) {
+        this.data = proto;
     }
 
     protected abstract T parse(byte[] bytes) throws InvalidProtocolBufferException;

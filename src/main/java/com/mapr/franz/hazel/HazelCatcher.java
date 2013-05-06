@@ -23,11 +23,10 @@ import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
 import com.googlecode.protobuf.pro.duplex.server.DuplexTcpServerBootstrap;
 import com.hazelcast.config.ClasspathXmlConfig;
 import com.hazelcast.config.Config;
-import com.hazelcast.core.DistributedTask;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.MemberLeftException;
 import com.mapr.franz.catcher.Client;
+import com.mapr.franz.catcher.wire.Catcher;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -35,7 +34,7 @@ import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Serializable;
+import java.io.FileNotFoundException;
 import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
@@ -43,9 +42,7 @@ import java.security.SecureRandom;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
@@ -74,51 +71,65 @@ public class HazelCatcher {
 
     private static int id = new SecureRandom().nextInt();
 
-    public static void main(String[] args) throws SocketException, ExecutionException, InterruptedException, CmdLineException {
+    public static void main(String[] args)
+            throws SocketException, ExecutionException, InterruptedException, CmdLineException, FileNotFoundException {
         Options opts = parseOptions(args);
 
-        HazelcastInstance instance = setupHazelCast(opts);
-        PeerInfo serverInfo = new PeerInfo("0.0.0.0", opts.port);
+        // start this first so that Hazel has to take second pickings
+        DuplexTcpServerBootstrap bootstrap = startProtoServer(opts.port);
 
+        HazelcastInstance instance = setupHazelCast(opts.hosts);
+        Server us = recordServerInstance(opts, instance);
+
+        bootstrap.getRpcServiceRegistry().registerBlockingService(
+                Catcher.CatcherService.newReflectiveBlockingService(new CatcherImpl(us, instance)));
+
+        System.exit(0);
+    }
+
+    private static DuplexTcpServerBootstrap startProtoServer(int port) {
+        PeerInfo serverInfo = new PeerInfo("0.0.0.0", port);
         DuplexTcpServerBootstrap bootstrap = new DuplexTcpServerBootstrap(
                 serverInfo,
                 new NioServerSocketChannelFactory(
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool())
         );
-
         bootstrap.setRpcServerCallExecutor(new ThreadPoolCallExecutor(10, 10));
+        return bootstrap;
+    }
 
+    private static Server recordServerInstance(Options opts, HazelcastInstance instance) throws SocketException {
         List<Client.HostPort> addresses = Lists.newArrayList();
         Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
         while (networkInterfaces.hasMoreElements()) {
             NetworkInterface ifc = networkInterfaces.nextElement();
             if (!ifc.isLoopback()) {
                 for (InterfaceAddress address : ifc.getInterfaceAddresses()) {
-                    addresses.add(new Client.HostPort(address.getAddress().getHostAddress(), port));
+                    addresses.add(new Client.HostPort(address.getAddress().getHostAddress(), opts.port));
                 }
             }
         }
         long serverId = new SecureRandom().nextLong();
 
         Set<Server> servers = instance.getSet("servers");
-        servers.add(new Server(serverId, addresses));
+        Server r = new Server(serverId, addresses);
+        servers.add(r);
+        return r;
+    }
 
-                boolean retry;
-                do {
-                    retry = false;
-                    try {
-                        DistributedTask<Integer> task = new DistributedTask<Integer>(new Doit(), s);
-                        ExecutorService executorService = instance.getExecutorService();
-                        executorService.execute(task);
-                        System.out.printf("%s %d\n", s, task.get());
-                    } catch (MemberLeftException e) {
-                        System.out.printf("oopsie\n");
-                        retry = true;
-                    }
-                } while (retry);
+    private static HazelcastInstance setupHazelCast(String hosts) {
+        Config config = new ClasspathXmlConfig("cluster.xml");
 
-        System.exit(0);
+        Splitter onCommas = Splitter.on(",").omitEmptyStrings().trimResults();
+        for (String host : onCommas.split(hosts)) {
+            config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+            config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(true);
+            config.getNetworkConfig().getJoin().getTcpIpConfig().addMember(host);
+        }
+
+        System.out.printf("config = %s\n\n", config);
+        return Hazelcast.newHazelcastInstance(config);
     }
 
     private static Options parseOptions(String[] args) {
@@ -138,25 +149,11 @@ public class HazelCatcher {
         return opts;
     }
 
-    private static HazelcastInstance setupHazelCast(Options opts) {
-        Config config = new ClasspathXmlConfig("cluster.xml");
-
-        for (String host : Splitter.on(",").omitEmptyStrings().trimResults().split(opts.hosts)) {
-            config.getNetworkConfig().getJoin().getTcpIpConfig().addMember(host);
-        }
-        System.out.printf("config = %s\n\n", config);
-
-        return Hazelcast.newHazelcastInstance(config);
-    }
-
-    public static class Doit implements Callable<Integer>, Serializable {
-        public Integer call() throws Exception {
-            return HazelCatcher.id;
-        }
-    }
-
     public static class Options {
-        @Option(name = "-host", usage = "Comma separated list of at least one node's hostname or IP address in the cluster")
+        @Option(name = "-cluster", usage = "Comma separated list of at least one node's hostname or IP address in the cluster.  IP and port ranges are acceptable here.")
         String hosts;
+
+        @Option(name = "-port", usage = "Port number for the catcher server to listen to")
+        int port = 5900;
     }
 }

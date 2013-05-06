@@ -40,7 +40,6 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
     // TODO: configuration option
     private final String basePath = "/tmp/mapr-spout-test";
 
-    // TODO: replace with proto based logger
     private final ProtoLogger logger;
 
     private final long serverId;
@@ -72,10 +71,33 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
         return r.build();
     }
 
-    public class LogMessage extends ProtoSerializable<Catcher.LogMessage>
-            implements Callable<LogResponse> {
+    @Override
+    public Catcher.LogMessageResponse log(RpcController controller,
+                                          Catcher.LogMessage request) throws ServiceException {
+        try {
+            // forward request, possibly to ourselves via HazelCast
+            String topic = request.getTopic();
+            DistributedTask<LogResponse> task = new DistributedTask<>(new LogMessage(request), topic);
+            instance.getExecutorService().execute(task);
+            return task.get().getProto();
+        } catch (InterruptedException | ExecutionException e) {
+            StringWriter s = new StringWriter();
+            PrintWriter pw = new PrintWriter(s);
+            new ClusterStateException("Can't handle request ... can't see rest of cluster", e).printStackTrace(pw);
+            pw.close();
+            return Catcher.LogMessageResponse
+                    .newBuilder()
+                    .setServerId(serverId)
+                    .setSuccessful(false)
+                    .setBackTrace(s.toString())
+                    .build();
+        }
+    }
+
+
+    public class LogMessage extends ProtoSerializable<Catcher.LogMessage> implements Callable<LogResponse> {
         public LogMessage(Catcher.LogMessage request) {
-            this.data = request;
+            super(request);
         }
 
         /**
@@ -85,8 +107,8 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
          */
         @Override
         public LogResponse call() throws IOException {
-            ByteString payload = data.getPayload();
-            String topic = data.getTopic();
+            ByteString payload = getProto().getPayload();
+            String topic = getProto().getTopic();
             logger.write(topic, payload);
             return new LogResponse(
                     Catcher.LogMessageResponse.newBuilder()
@@ -104,37 +126,12 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
 
     public static class LogResponse extends ProtoSerializable<Catcher.LogMessageResponse> {
         public LogResponse(Catcher.LogMessageResponse response) {
-            data = response;
+            super(response);
         }
 
         @Override
         protected Catcher.LogMessageResponse parse(byte[] bytes) throws InvalidProtocolBufferException {
             return Catcher.LogMessageResponse.parseFrom(bytes);
-        }
-    }
-
-
-    @Override
-    public Catcher.LogMessageResponse log(RpcController controller,
-                                          Catcher.LogMessage request) throws ServiceException {
-        try {
-            // forward request, possibly to ourselves via HazelCast
-            String topic = request.getTopic();
-            DistributedTask<LogResponse> task = new DistributedTask<>(new LogMessage(request), topic);
-            instance.getExecutorService().execute(task);
-
-            return task.get().data;
-        } catch (InterruptedException | ExecutionException e) {
-            StringWriter s = new StringWriter();
-            PrintWriter pw = new PrintWriter(s);
-            new ClusterStateException("Can't handle request ... can't see rest of cluster", e).printStackTrace(pw);
-            pw.close();
-            return Catcher.LogMessageResponse
-                    .newBuilder()
-                    .setServerId(serverId)
-                    .setSuccessful(false)
-                    .setBackTrace(s.toString())
-                    .build();
         }
     }
 
