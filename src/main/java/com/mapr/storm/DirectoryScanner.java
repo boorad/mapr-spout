@@ -34,7 +34,6 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
 import com.google.common.collect.Sets;
-import com.google.common.io.Closeables;
 
 /**
  * Scans through files in a directory as they appear.
@@ -110,7 +109,12 @@ public class DirectoryScanner implements Serializable {
                 if (liveFile != null) {
                     log.trace("Closing {}", liveFile);
                 }
-                Closeables.closeQuietly(liveInput);
+                try {
+                    liveInput.close();
+                } catch (IOException e) {
+                    log.warn("Error closing file {}", liveFile);
+                    log.warn("Backtrace", e);
+                }
             }
             liveFile = nextInLine;
             liveInput = r;

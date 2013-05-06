@@ -42,7 +42,6 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -413,8 +412,8 @@ public class ClusterStateTest {
             zks.shutdown();
             waitForServerDown(PORT, 1000);
 
-            logdir.delete();
-            snapdir.delete();
+            assertTrue(logdir.delete());
+            assertTrue(snapdir.delete());
         }
 
         public String connectString() {
@@ -484,7 +483,7 @@ public class ClusterStateTest {
                 StringBuilder sb = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    sb.append(line + "\n");
+                    sb.append(line).append("\n");
                 }
                 return sb.toString();
             } finally {
@@ -596,7 +595,7 @@ public class ClusterStateTest {
                                 }
                             }), new Function<String, String>() {
                         @Override
-                        public String apply(@Nullable String s) {
+                        public String apply(String s) {
                             return s.substring(s.lastIndexOf("/") + 1, s.length());
                         }
                     }));
@@ -646,7 +645,7 @@ public class ClusterStateTest {
         public String toString() {
             return Iterables.transform(data.keySet(), new Function<String, Object>() {
                 @Override
-                public Object apply(@Nullable String s) {
+                public Object apply(String s) {
                     if (s == null) {
                         return "";
                     } else if (s.length() > 6) {

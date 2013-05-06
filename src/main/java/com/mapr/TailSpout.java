@@ -108,10 +108,10 @@ public class TailSpout extends BaseRichSpout {
     public TailSpout(StreamParserFactory factory, File statusFile, File inputDirectory, final Pattern inputFileNamePattern) throws IOException {
         this.factory = factory;
         this.statusFile = statusFile;
-        if (statusFile.exists()) {
-            scanner = new DirectoryScanner(inputDirectory, inputFileNamePattern);
-        } else {
+        if (statusFile.exists() && statusFile.length() > 0) {
             scanner = SpoutState.restoreState(pendingReplays, statusFile);
+        } else {
+            scanner = new DirectoryScanner(inputDirectory, inputFileNamePattern);
         }
     }
 
@@ -156,30 +156,25 @@ public class TailSpout extends BaseRichSpout {
         }
 
         try {
-            while (currentInput != null) {
+            if (currentInput != null) {
                 // read a record
                 long position = parser.currentOffset();
                 List<Object> r = parser.nextRecord();
 
                 // assert currentInput != null
                 if (r == null) {
-                    // reached end of current file
-                    // (currentInput != null && r == null) so we enter loop at least
-                    // once
-                    while (currentInput != null && r == null) {
-                        currentInput = openNextInput();
+                    // reached end of current file.  Try just once to
+                    // open next input (if it exists) and read again.
+                    // if we still get nothing, we stay with the current
+                    // file
+                    currentInput = openNextInput();
 
-                        // assert r == null
-                        if (currentInput != null) {
-                            position = parser.currentOffset();
-                            r = parser.nextRecord();
-                        }
-                        // r != null => currentInput != null
+                    // assert r == null
+                    if (currentInput != null) {
+                        position = parser.currentOffset();
+                        r = parser.nextRecord();
                     }
-                    // post: r != null iff currentInput != null
                 }
-                // post: (r != null iff currentInput != null) || (r != null)
-                // post: (r == null => currentInput == null)
 
                 if (r != null) {
                     if (replayFailedMessages.get()) {
@@ -195,10 +190,9 @@ public class TailSpout extends BaseRichSpout {
                         SpoutState.recordCurrentState(ackBuffer, scanner, parser, statusFile);
                         nextCheckPointTime = System.nanoTime() / 1e9 + checkPointIntervalSeconds;
                     }
-                    break;
                 }
             }
-            // exit only when all files have been processed completely
+            // exit after emitting a tuple or when end of current input is found
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

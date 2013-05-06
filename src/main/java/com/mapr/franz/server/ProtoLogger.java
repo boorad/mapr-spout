@@ -74,6 +74,20 @@ public class ProtoLogger {
         out.flush();
     }
 
+    /**
+     * Closes all open streams.  Disregards all errors encountered other than logging the exceptions.
+     */
+    public void close() {
+        for (String topic : mapping.keySet()) {
+            FileOutputStream f = mapping.get(topic);
+            try {
+                f.close();
+            } catch (IOException e) {
+                log.warn("Exception while trying to close file for topic " + topic, e);
+            }
+        }
+    }
+
     private FileOutputStream getCurrentStream(String topic) throws IOException {
         Preconditions.checkArgument(topic.matches("[0-9a-zA-Z_\\-]+"), "Invalid topic name %s", topic);
 
@@ -82,7 +96,12 @@ public class ProtoLogger {
             return getNextStream(topic, EXISTING_FILE_PAD);
         } else {
             if (currentStream.getChannel().position() > maxLogFile) {
-                currentStream.close();
+                try {
+                    currentStream.close();
+                } catch (IOException e) {
+                    // we actually don't much care about this since we have already flushed all output
+                    log.warn("Error while closing stream for topic " + topic, e);
+                }
                 return getNextStream(topic, 0);
             } else {
                 return currentStream;
@@ -90,6 +109,15 @@ public class ProtoLogger {
         }
     }
 
+    /**
+     * Opens the next file in sequence for a topic.  Assumes that the current stream (if any) for that topic
+     * has been closed by our caller.
+     *
+     * @param topic The topic for which we want a new stream.
+     * @param pad   How much unused space to leave after the end of the previous file
+     * @return The new output stream.
+     * @throws FileNotFoundException If the topic directory is deleted during the execution of this method.
+     */
     private FileOutputStream getNextStream(String topic, int pad) throws FileNotFoundException {
         File base = new File(homeDir, topic);
         if (base.mkdirs()) {
@@ -98,6 +126,7 @@ public class ProtoLogger {
         Preconditions.checkState(base.exists(), "Can't create topic directory");
         Preconditions.checkState(base.canWrite(), "Can't write to topic directory");
 
+        // get a list of all log files in this topic directory
         String[] files = base.list(new FilenameFilter() {
             Pattern logFileName = Pattern.compile("[0-9a-f]+");
 
@@ -107,6 +136,7 @@ public class ProtoLogger {
             }
         });
 
+        // reverse sort these file names.  The name of that file gives us the offset at the beginning of the last file
         long offset;
         if (files.length == 0) {
             offset = 0;

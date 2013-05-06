@@ -16,26 +16,25 @@
 
 package com.mapr.storm.test;
 
-import static org.junit.Assert.assertEquals;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.regex.Pattern;
-
-import org.apache.commons.io.FileUtils;
-import org.junit.After;
-import org.junit.Test;
-
 import backtype.storm.Config;
 import backtype.storm.task.TopologyContext;
-
+import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import com.mapr.TailSpout;
 import com.mapr.storm.streamparser.CountBlobStreamParserFactory;
 import com.mapr.storm.streamparser.StreamParserFactory;
+import org.apache.commons.io.FileUtils;
+import org.junit.After;
+import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class TailSpoutTest {
 
@@ -43,14 +42,17 @@ public class TailSpoutTest {
 
     @After
     public void cleanupFiles() {
-        for (File x : tempDir.listFiles()) {
-            x.delete();
+        File[] files = tempDir.listFiles();
+        if (files != null) {
+            for (File x : files) {
+                assertTrue(x.delete());
+            }
+            assertTrue(tempDir.delete());
+            assertTrue(statusDir.delete());
         }
-        tempDir.delete();
-        statusDir.delete();
     }
 
-    @Test
+    @Test(timeout = 2000)
     public void testSimpleFileRoll() throws IOException, InterruptedException {
         tempDir = Files.createTempDir();
         statusDir = Files.createTempDir();
@@ -69,35 +71,33 @@ public class TailSpoutTest {
         spout.open(conf, context, collector);
         
         // add some files
-        FileUtils.writeByteArrayToFile(new File(tempDir, "x-2"), 
-        		payload("x-2"), true);
-        File file1 = new File(tempDir, "x-1");
-        FileUtils.writeByteArrayToFile(file1, payload("x-1"), true);
+        FileUtils.writeByteArrayToFile(new File(tempDir, "x-1"), payload("x-1"), true);
+        FileUtils.writeByteArrayToFile(new File(tempDir, "x-2"), payload("x-2"), true);
 
         // verify we read both files in order
         spout.nextTuple();
         List<Object> tuple1 = collector.getTuple();
-        assertEquals("x-1", tuple1.get(0).toString());
+        assertEquals("x-1", new String((byte[]) tuple1.get(0), Charsets.UTF_8));
 
         spout.nextTuple();
         List<Object> tuple2 = collector.getTuple();
         Object msgId2 = collector.getMessageId();
-        assertEquals("x-2", tuple2.get(0).toString());
+        assertEquals("x-2", new String((byte[]) tuple2.get(0), Charsets.UTF_8));
 
         // verify that we get empty records for a bit
         // the fact that we get tuple2 values is because no 'emit' hits
         // collector, so values are unchanged.
         spout.nextTuple();
         List<Object> tuple3 = collector.getTuple();
-        assertEquals("x-2", tuple3.get(0).toString());
+        assertEquals("x-2", new String((byte[]) tuple3.get(0), Charsets.UTF_8));
         assertEquals(msgId2, collector.getMessageId());
 
         // delete an old file without a problem
-        new File(tempDir, "x-1").delete();
+        assertTrue(new File(tempDir, "x-1").delete());
 
         spout.nextTuple();
         List<Object> tuple4 = collector.getTuple();
-        assertEquals("x-2", tuple4.get(0).toString());
+        assertEquals("x-2", new String((byte[]) tuple4.get(0), Charsets.UTF_8));
         assertEquals(msgId2, collector.getMessageId());
 
         // add a file that doesn't match the pattern without impact
@@ -105,30 +105,24 @@ public class TailSpoutTest {
         		payload("y-1"), true);
         spout.nextTuple();
         List<Object> tuple5 = collector.getTuple();
-        assertEquals("x-2", tuple5.get(0).toString());
+        assertEquals("x-2", new String((byte[]) tuple5.get(0), Charsets.UTF_8));
         assertEquals(msgId2, collector.getMessageId());
 
         
         // append content to an existing file
-        FileUtils.writeByteArrayToFile(file1, payload("x-11"), true);
+        FileUtils.writeByteArrayToFile(new File(tempDir, "x-1"), payload("x-11"), true);
         spout.nextTuple();
         List<Object> tuple11 = collector.getTuple();
-        assertEquals("x-11", tuple11.get(0).toString());
+        assertEquals("x-11", new String((byte[]) tuple11.get(0), Charsets.UTF_8));
 
     }
     
     private byte[] payload(String msg) {
-		try {
-			byte[] content = msg.getBytes("UTF-8");
-	    	byte[] size = ByteBuffer.allocate(4).putInt(content.length).array();
-	    	int i = content.length + 4;
-	    	byte[] ret = new byte[i];
-	    	System.arraycopy(size, 0, ret, 0, size.length);
-	    	System.arraycopy(content, 0, ret, size.length, content.length);
-	    	return ret;
-		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace();
-		}
-		return null;
+        byte[] content = msg.getBytes(Charsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(4 + content.length);
+        buf.putInt(content.length);
+        buf.put(content);
+        buf.flip();
+        return buf.array();
     }
 }

@@ -126,6 +126,8 @@ public class ProtoSpoutTest {
         for (int i = 0; i < 1000; i++) {
             p.write("topic-1", ByteString.copyFromUtf8(i + ""));
         }
+        p.close();
+
 
         ProtoSpout ps = new ProtoSpout(new ProtoSpout.TupleParser() {
             @Override

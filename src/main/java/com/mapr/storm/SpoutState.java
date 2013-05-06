@@ -17,6 +17,7 @@
 package com.mapr.storm;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import com.google.gson.Gson;
@@ -101,6 +102,7 @@ public class SpoutState {
     }
 
     public static DirectoryScanner restoreState(Queue<PendingMessage> pendingReplays, File statusFile) throws IOException {
+        Preconditions.checkState(statusFile.exists(), "Status file not found %s", statusFile);
         SpoutState s = SpoutState.fromString(Files.toString(statusFile, Charsets.UTF_8));
         DirectoryScanner scanner = new DirectoryScanner(new File(s.inputDirectory), Pattern.compile(s.filePattern));
 
