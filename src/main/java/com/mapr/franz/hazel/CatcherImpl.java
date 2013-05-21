@@ -22,9 +22,12 @@ import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.hazelcast.core.DistributedTask;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.ISet;
 import com.mapr.franz.catcher.wire.Catcher;
 import com.mapr.franz.server.ProtoLogger;
 
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -38,22 +41,23 @@ import java.util.concurrent.ExecutionException;
 public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
 
     // TODO: configuration option
-    private final String basePath = "/tmp/mapr-spout-test";
+    private String basePath;
 
-    private final ProtoLogger logger;
+    private static ProtoLogger logger;
 
-    private final long serverId;
+    private static long serverId;
     private Server us;
     private HazelcastInstance instance;
 
     // TODO implement some sort of statistics that records (a) number of
     // clients, (b) transactions per topic, (c) bytes per topic
 
-    public CatcherImpl(Server us, HazelcastInstance instance) throws FileNotFoundException {
+    public CatcherImpl(Server us, HazelcastInstance instance, String basePath) throws FileNotFoundException {
         this.serverId = us.getProto().getServerId();
         this.us = us;
         this.instance = instance;
-        logger = new ProtoLogger(basePath);
+        this.basePath = basePath;
+        logger = new ProtoLogger(this.basePath);
     }
 
     @Override
@@ -62,7 +66,9 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
         Catcher.HelloResponse.Builder r = Catcher.HelloResponse.newBuilder()
                 .setServerId(serverId);
 
-        for (Server server : instance.<Server>getSet("servers")) {
+        ISet<Server> servers = instance.getSet("servers");
+        for (Server server : servers) {
+            System.out.printf("server = %s\n", server);
             r.addCluster(server.getProto());
         }
 
@@ -84,7 +90,9 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
             StringWriter s = new StringWriter();
             PrintWriter pw = new PrintWriter(s);
             new ClusterStateException("Can't handle request ... can't see rest of cluster", e).printStackTrace(pw);
+            new ClusterStateException("Can't handle request ... can't see rest of cluster", e).printStackTrace();
             pw.close();
+
             return Catcher.LogMessageResponse
                     .newBuilder()
                     .setServerId(serverId)
@@ -95,9 +103,14 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
     }
 
 
-    public class LogMessage extends ProtoSerializable<Catcher.LogMessage> implements Callable<LogResponse> {
+    public static class LogMessage extends ProtoSerializable<Catcher.LogMessage> implements Callable<LogResponse> {
         public LogMessage(Catcher.LogMessage request) {
             super(request);
+        }
+
+        // for serialization framework
+        public LogMessage() {
+            super();
         }
 
         /**
@@ -119,6 +132,16 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
         }
 
         @Override
+        public void readData(DataInput in) throws IOException {
+            super.readData(in);    //To change body of overridden methods use File | Settings | File Templates.
+        }
+
+        @Override
+        public void writeData(DataOutput out) throws IOException {
+            super.writeData(out);    //To change body of overridden methods use File | Settings | File Templates.
+        }
+
+        @Override
         protected Catcher.LogMessage parse(byte[] bytes) throws InvalidProtocolBufferException {
             return Catcher.LogMessage.parseFrom(bytes);
         }
@@ -127,6 +150,10 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
     public static class LogResponse extends ProtoSerializable<Catcher.LogMessageResponse> {
         public LogResponse(Catcher.LogMessageResponse response) {
             super(response);
+        }
+
+        public LogResponse() {
+            super();
         }
 
         @Override

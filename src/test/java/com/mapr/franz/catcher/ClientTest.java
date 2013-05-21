@@ -25,14 +25,11 @@ import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.mapr.franz.catcher.wire.Catcher;
-import mockit.Mock;
-import mockit.MockUp;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.security.SecureRandom;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -62,34 +59,34 @@ public class ClientTest {
     @Test
     public void oneServerRetry() throws ServiceException, IOException {
         final ServerFarm farm = new ServerFarm();
-        new MockUp<CatcherConnection>() {
-            CatcherConnection it;
-
-            @Mock(maxInvocations = 10)
-            public void $init(PeerInfo host) throws IOException {
-                it.setServer(host);
-            }
-
-            @Mock
-            public Catcher.CatcherService.BlockingInterface getService() {
-                return new FarmedServer(new Client.HostPort(new PeerInfo("foo", 123)), new SecureRandom().nextLong(), farm);
-            }
-
-            @Mock
-            public String toString() {
-                return "MockConnection(" + it.getServer() + ")";
-            }
-        };
+//        new MockUp<CatcherConnection>() {
+//            CatcherConnection it;
+//
+//            @Mock(maxInvocations = 10)
+//            public void $init(PeerInfo host) throws IOException {
+//                it.setServer(host);
+//            }
+//
+//            @Mock
+//            public Catcher.CatcherService.BlockingInterface getService() {
+//                return new FarmedServer(new Client.HostPort(new PeerInfo("foo", 123)), new SecureRandom().nextLong(), farm);
+//            }
+//
+//            @Mock
+//            public String toString() {
+//                return "MockConnection(" + it.getServer() + ")";
+//            }
+//        };
 
         Client c = new Client(new ConnectionFactory() {
             int retry = 0;
 
             @Override
-            public CatcherConnection create(PeerInfo server) {
+            public CatcherConnection create(PeerInfo server) throws IOException {
                 if (retry++ == 0) {
                     return null;
                 } else {
-                    return CatcherConnection.connect(server);
+                    return new FakeConnection(server, farm);
                 }
             }
         }, Lists.newArrayList(new PeerInfo("foo", 0)));
@@ -108,36 +105,38 @@ public class ClientTest {
         final Map<CatcherConnection, FarmedServer> servermap = Maps.newHashMap();
         final Map<CatcherConnection, PeerInfo> hostmap = Maps.newHashMap();
 
-        new MockUp<CatcherConnection>() {
-            CatcherConnection it;
-
-            @Mock(maxInvocations = 10)
-            public void $init(PeerInfo host) throws IOException {
-                servermap.put(it, farm.newServer(new Client.HostPort(host)));
-                hostmap.put(it, host);
-                it.setServer(host);
-            }
-
-            @Mock
-            public Catcher.CatcherService.BlockingInterface getService() {
-                return servermap.get(it);
-            }
-
-            @Mock
-            public String toString() {
-                return "MockConnection(" + hostmap.get(it) + ")";
-            }
-        };
+//        new MockUp<CatcherConnection>() {
+//            CatcherConnection it;
+//
+//            @Mock(maxInvocations = 10)
+//            public void $init(PeerInfo host) throws IOException {
+//                servermap.put(it, farm.newServer(new Client.HostPort(host)));
+//                hostmap.put(it, host);
+//                it.setServer(host);
+//            }
+//
+//            @Mock
+//            public Catcher.CatcherService.BlockingInterface getService() {
+//                return servermap.get(it);
+//            }
+//
+//            @Mock
+//            public String toString() {
+//                return "MockConnection(" + hostmap.get(it) + ")";
+//            }
+//        };
 
         List<PeerInfo> hosts = Lists.newArrayList();
         for (int i = 0; i < 10; i++) {
             hosts.add(new PeerInfo(Integer.toString(i), 100));
         }
-//        for (int i = 0; i < 10; i++) {
-//            farm.newServer(new Client.HostPort(Integer.toString(i), 100));
-//        }
 
-        Client c = new Client(hosts);
+        Client c = new Client(new ConnectionFactory() {
+            @Override
+            public CatcherConnection create(final PeerInfo server) throws IOException {
+                return new FakeConnection(server, farm);
+            }
+        }, hosts);
 
         for (int i = 0; i < 600; i++) {
             int topic = i % 30;
@@ -194,6 +193,46 @@ public class ClientTest {
         }
         return count;
     }
+
+    private static class FakeConnection implements CatcherConnection {
+
+        private final FarmedServer service;
+        private final PeerInfo server;
+
+        private FakeConnection(PeerInfo server, ServerFarm farm) throws IOException {
+            service = farm.newServer(new Client.HostPort(server));
+            this.server = server;
+        }
+
+        public Catcher.CatcherService.BlockingInterface getService() {
+            return service;
+        }
+
+        @Override
+        public RpcController getController() {
+            return null;
+        }
+
+        @Override
+        public PeerInfo getServer() {
+            return server;
+        }
+
+        @Override
+        public void close() {
+            // ignore
+        }
+
+        @Override
+        public void setServer(PeerInfo host) {
+            throw new RuntimeException("Shouldn't call this");
+        }
+
+        public String toString() {
+            return "MockConnection(" + server + ")";
+        }
+    }
+
 
     /**
      * Keeps track of a bunch of FarmedServer's and the associated transaction counts.

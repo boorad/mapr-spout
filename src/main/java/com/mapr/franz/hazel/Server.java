@@ -37,6 +37,11 @@ public class Server extends ProtoSerializable<Catcher.Server> {
         setProto(sb.build());
     }
 
+    // for framework use only
+    public Server() {
+        super();
+    }
+
     @Override
     protected Catcher.Server parse(byte[] bytes) throws InvalidProtocolBufferException {
         return Catcher.Server.parseFrom(bytes);

@@ -42,7 +42,6 @@ import java.security.SecureRandom;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 /**
@@ -71,9 +70,14 @@ public class HazelCatcher {
 
     private static int id = new SecureRandom().nextInt();
 
-    public static void main(String[] args)
-            throws SocketException, ExecutionException, InterruptedException, CmdLineException, FileNotFoundException {
-        Options opts = parseOptions(args);
+    public static void main(String[] args) throws FileNotFoundException, SocketException {
+        run(parseOptions(args));
+
+
+    }
+
+    public static void run(Options opts) throws SocketException, FileNotFoundException {
+        logger.warn("Starting server {}", opts);
 
         // start this first so that Hazel has to take second pickings
         DuplexTcpServerBootstrap bootstrap = startProtoServer(opts.port);
@@ -82,10 +86,10 @@ public class HazelCatcher {
         Server us = recordServerInstance(opts, instance);
 
         bootstrap.getRpcServiceRegistry().registerBlockingService(
-                Catcher.CatcherService.newReflectiveBlockingService(new CatcherImpl(us, instance)));
-
-        System.exit(0);
+                Catcher.CatcherService.newReflectiveBlockingService(new CatcherImpl(us, instance, opts.basePath)));
+        bootstrap.bind();
     }
+
 
     private static DuplexTcpServerBootstrap startProtoServer(int port) {
         PeerInfo serverInfo = new PeerInfo("0.0.0.0", port);
@@ -115,6 +119,7 @@ public class HazelCatcher {
         Set<Server> servers = instance.getSet("servers");
         Server r = new Server(serverId, addresses);
         servers.add(r);
+        logger.warn("Currently have these servers: {}", servers);
         return r;
     }
 
@@ -128,7 +133,7 @@ public class HazelCatcher {
             config.getNetworkConfig().getJoin().getTcpIpConfig().addMember(host);
         }
 
-        System.out.printf("config = %s\n\n", config);
+        logger.warn("config = {}", config);
         return Hazelcast.newHazelcastInstance(config);
     }
 
@@ -150,10 +155,37 @@ public class HazelCatcher {
     }
 
     public static class Options {
+        public Options host(String hosts) {
+            this.hosts = hosts;
+            return this;
+        }
+
+        public Options base(String basePath) {
+            this.basePath = basePath;
+            return this;
+        }
+
+        public Options port(int port) {
+            this.port = port;
+            return this;
+        }
+
         @Option(name = "-cluster", usage = "Comma separated list of at least one node's hostname or IP address in the cluster.  IP and port ranges are acceptable here.")
         String hosts;
 
         @Option(name = "-port", usage = "Port number for the catcher server to listen to")
         int port = 5900;
+
+        @Option(name = "-base", usage = "Home directory for recording topics")
+        String basePath = "/tmp/mapr-spout";
+
+        @Override
+        public String toString() {
+            return "Options{" +
+                    "basePath='" + basePath + '\'' +
+                    ", hosts='" + hosts + '\'' +
+                    ", port=" + port +
+                    '}';
+        }
     }
 }
