@@ -1,0 +1,3 @@
+# point this to override base.properties
+# For example, point this to a MapR cluster NFS mount
+franz.server.base.directory=/mapr/my.cluster.com/foo/bar/data_in
