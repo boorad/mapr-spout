@@ -1,8 +1,23 @@
+/*
+ * Copyright MapR Technologies, $year
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.mapr.franz.server;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.util.Properties;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcController;
@@ -16,8 +31,8 @@ import com.mapr.franz.catcher.wire.Catcher;
 public class CatcherServiceImpl implements
         Catcher.CatcherService.BlockingInterface {
 
-    private Properties props;
-    private final String BASE_DIRECTORY = "/tmp/mapr-storm";
+//    private Properties props;
+//    private final String BASE_DIRECTORY = "/tmp/mapr-storm";
 
     // TODO: replace with TopicObserver
     private final GhettoTopicLogger logger;
@@ -32,8 +47,10 @@ public class CatcherServiceImpl implements
     public CatcherServiceImpl(long serverId, ClusterState state) {
         this.serverId = serverId;
         this.state = state;
-        this.props = Server.loadProperties();
-        String basePath = props.getProperty("base.directory", BASE_DIRECTORY);
+//        this.props = Server.loadProperties();
+//        String basePath = props.getProperty("franz.server.base.directory",
+//                BASE_DIRECTORY);
+        String basePath = Server.getBasePath();
         logger = new GhettoTopicLogger(basePath);
     }
 
