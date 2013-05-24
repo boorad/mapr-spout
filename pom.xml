@@ -22,7 +22,7 @@
 
     <groupId>mapr-storm</groupId>
     <artifactId>mapr-storm</artifactId>
-    <version>0.3</version>
+    <version>0.4</version>
 
     <name>MapR / Storm connector</name>
     <url>https://github.com/mapr/mapr-storm</url>
