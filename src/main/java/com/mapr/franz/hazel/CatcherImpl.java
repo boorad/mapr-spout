@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import com.google.protobuf.ServiceException;
 import com.hazelcast.core.DistributedTask;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ISet;
+import com.mapr.franz.ProtoSerializable;
+import com.mapr.franz.Server;
 import com.mapr.franz.catcher.wire.Catcher;
 import com.mapr.franz.server.ProtoLogger;
 
@@ -53,7 +55,8 @@ public class CatcherImpl implements Catcher.CatcherService.BlockingInterface {
     // clients, (b) transactions per topic, (c) bytes per topic
 
     public CatcherImpl(Server us, HazelcastInstance instance, String basePath) throws FileNotFoundException {
-        this.serverId = us.getProto().getServerId();
+        // this is evil because it prevents running more than one server per JVM
+        CatcherImpl.serverId = us.getProto().getServerId();
         this.us = us;
         this.instance = instance;
         this.basePath = basePath;

@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.mapr.franz.hazel;
+package com.mapr.franz;
 
 import com.google.protobuf.GeneratedMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -22,14 +22,15 @@ import com.hazelcast.nio.DataSerializable;
 
 import java.io.DataInput;
 import java.io.DataOutput;
-import java.io.EOFException;
 import java.io.IOException;
 
 /**
  * Provides Hazel-style serialization for Protobuf messages.  This lets protobuf messages
  * to be stored in Hazel distributed data structures as well as passed as state in
  * distributed tasks.
- *
+ * <p/>
+ * This class is also handy to hold boilerplate protobuf contents to avoid repeated serialization.
+ * <p/>
  * To use this, all you have to do is define a parse() method to parse your particular
  * brand of protobuf.
  */
@@ -37,7 +38,7 @@ public abstract class ProtoSerializable<T extends GeneratedMessage> implements D
     private T data;
 
     // for use by serialization framework only
-    ProtoSerializable() {
+    protected ProtoSerializable() {
     }
 
     public ProtoSerializable(T data) {

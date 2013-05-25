@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.mapr.franz.hazel;
+package com.mapr.franz;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.mapr.franz.catcher.Client;
@@ -24,7 +24,6 @@ import com.mapr.franz.catcher.wire.Catcher;
  * Hazel serializable state for a server.
  */
 public class Server extends ProtoSerializable<Catcher.Server> {
-
     public Server(long id, Iterable<Client.HostPort> addresses) {
         Catcher.Server.Builder sb = Catcher.Server.newBuilder()
                 .setServerId(id);
