@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, 2013
+ * Copyright MapR Technologies, $year
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,9 @@
 
 package com.mapr.franz.server;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-import com.google.common.io.Resources;
-import com.googlecode.protobuf.pro.duplex.PeerInfo;
-import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
-import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
-import com.googlecode.protobuf.pro.duplex.listener.TcpConnectionEventListener;
-import com.googlecode.protobuf.pro.duplex.server.DuplexTcpServerBootstrap;
-import com.mapr.franz.catcher.Client;
-import com.mapr.franz.catcher.wire.Catcher;
-import org.apache.zookeeper.KeeperException;
-import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -46,30 +31,48 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Executors;
 
+import org.apache.zookeeper.KeeperException;
+import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.google.common.io.Resources;
+import com.googlecode.protobuf.pro.duplex.PeerInfo;
+import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
+import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
+import com.googlecode.protobuf.pro.duplex.listener.TcpConnectionEventListener;
+import com.googlecode.protobuf.pro.duplex.server.DuplexTcpServerBootstrap;
+import com.mapr.franz.catcher.Client;
+import com.mapr.franz.catcher.wire.Catcher;
+
 /**
  * Server process for catching log messages.
- * <p/>
+ *
  * A server is required to do a number of things:
- * <p/>
+ *
  * a) catch messages for topics it is handling.
- * <p/>
+ *
  * b) catch and forward messages for servers it is not handling
- * <p/>
+ *
  * c) respond to hello messages with a list of the catchers in service
- * <p/>
+ *
  * d) report traffic statistics on topics every few seconds
- * <p/>
+ *
  * e) clean up old queue files when starting a new file.
- * <p/>
+ *
  * Tasks (a), (b) and (c) are handled by the server implementation.
- * <p/>
+ *
  * Task (d) by the statistics reporter.
- * <p/>
+ *
  * Task (e) is handled as part of the message appender.
  */
 public class Server {
     private static Logger log = LoggerFactory.getLogger(Server.class);
     private static final String PROPERTIES_FILE = "franz-server.properties";
+    private static String basePath = "/tmp/mapr-storm";
 
     private static final String ZK_CONNECT_STRING = "localhost:2108";
     private static final String FRANZ_BASE = "/franz";
@@ -98,8 +101,10 @@ public class Server {
 
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
 
-        if (args.length < 2) {
-            System.out.println("Usage: java -cp <classpath> com.mapr.franz.server.Server <hostname> <port> [zkhost:port]");
+        if (args.length < 3) {
+            System.out.println("Usage: java -cp <classpath> " +
+                    "com.mapr.franz.server.Server " +
+                    "<server_write_path> <hostname> <port> [zkhost:port]");
             System.exit(1);
         }
 
@@ -162,6 +167,14 @@ public class Server {
         bootstrap.registerConnectionEventListener(listener);
 
         bootstrap.bind();
+    }
+
+    public static String getBasePath() {
+        return basePath;
+    }
+
+    public static void setBasePath(String serverPath) {
+        Server.basePath = serverPath;
     }
 
     public static class Info {
