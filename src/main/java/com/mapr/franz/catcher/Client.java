@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,16 @@ package com.mapr.franz.catcher;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
-import com.google.common.collect.*;
+import com.google.common.collect.ConcurrentHashMultiset;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Multiset;
+import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ServiceException;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
@@ -29,8 +38,15 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -94,7 +110,7 @@ public class Client {
 
     // TODO should reset this periodically so we try servers again in case network is repaired
     // list of server connections that have been persistently bad which we now ignore
-    private Multiset<HostPort > serverBlackList = ConcurrentHashMultiset.create();
+    private Multiset<HostPort> serverBlackList = ConcurrentHashMultiset.create();
 
     // TODO should decrement this periodically so that we start trying to handle redirects again
     private volatile int redirectCount = 0;
@@ -109,6 +125,7 @@ public class Client {
     public Client(Iterable<PeerInfo> servers) throws IOException, ServiceException {
         this(new ConnectionFactory(), servers);
     }
+
     public Client(ConnectionFactory connector, Iterable<PeerInfo> servers) throws IOException, ServiceException {
         this.connector = connector;
 
@@ -336,13 +353,13 @@ public class Client {
     }
 
     // TODO maybe should do this again against knownServers.keyset() every 30 seconds or so
-    private void connectAll(Iterable<HostPort > servers) throws IOException {
+    private void connectAll(Iterable<HostPort> servers) throws IOException {
         // all of the hosts we have attempted to contact
-        Set<HostPort > attempted = Sets.newHashSet();
+        Set<HostPort> attempted = Sets.newHashSet();
 
         // the ones we are going to try in each iteration
         Iterables.addAll(this.allKnownServers, servers);
-        Set<HostPort > newServers = Sets.newHashSet(servers);
+        Set<HostPort> newServers = Sets.newHashSet(servers);
         while (newServers.size() > 0) {
             // the novel servers that we hear about during this iteration
             Set<HostPort> discovered = Sets.newHashSet();

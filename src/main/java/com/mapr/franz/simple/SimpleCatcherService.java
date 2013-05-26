@@ -22,8 +22,10 @@ import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import com.mapr.franz.Server;
 import com.mapr.franz.catcher.Client;
+import com.mapr.franz.catcher.metrics.Metrics;
 import com.mapr.franz.catcher.wire.Catcher;
 import com.mapr.franz.server.ProtoLogger;
+import com.mapr.franz.stats.History;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,12 +50,31 @@ public class SimpleCatcherService implements Catcher.CatcherService.BlockingInte
 
     private static long serverId = 1;
     private final Server us;
+    private final History recorder;
 
     // TODO implement some sort of statistics that records (a) number of
     // clients, (b) transactions per topic, (c) bytes per topic
 
     public SimpleCatcherService(int port, String basePath) throws FileNotFoundException, SocketException {
         logger = new ProtoLogger(basePath);
+        recorder = new History(1, 10, 60, 300)
+                .logTicks()
+                .addListener(new History.Listener() {
+                    @Override
+                    public void tick(double t, int interval, int uniqueTopics, int messages) {
+                        try {
+                            logger.write("-metrics-", Metrics.DataPoint.newBuilder()
+                                    .setTime(t)
+                                    .setInterval(interval)
+                                    .setUniqueTopics(uniqueTopics)
+                                    .setMessages(messages)
+                                    .build().toByteString());
+                        } catch (IOException e) {
+                            log.warn("Error recording metric data point", e);
+                        }
+                    }
+                });
+
         List<Client.HostPort> addresses = Lists.newArrayList();
 
         Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
@@ -87,6 +108,7 @@ public class SimpleCatcherService implements Catcher.CatcherService.BlockingInte
             String topic = request.getTopic();
             ByteString payload = request.getPayload();
             logger.write(topic, payload);
+            recorder.message(topic);
             return Catcher.LogMessageResponse.newBuilder()
                     .setServerId(serverId)
                     .setSuccessful(true)
