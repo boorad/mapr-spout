@@ -13,53 +13,109 @@ When running in reliable mode, tuples are held in memory until they are acknowle
 
 For right now, there is no driver for the spout.  All that is in place and tested are the DirectoryScanner and the SpoutState classes.
 
-How to Run a Catcher Server
+Preliminaries
 ==========
 
-To run a catcher, you need a running Zookeeper.  Suppose you have downloaded zookeeper and are running a single node on port 2081.  To compile and running a Catcher, you need to do this
+Install maven, git and java:
 
-    mvn package -DskipTests
-    java -cp target/mapr-spout-0.1-SNAPSHOT-jar-with-dependencies.jar com.mapr.franz.server.Server localhost 9004 localhost:2081
+    sudo apt-get update
+    sudo apt-get -y install maven
+    sudo apt-get -y isntall openjdk-7-jdk
+    sudo apt-get -y install git
+    sudo apt-get -y install protobuf-compiler
 
-This will run a catcher that uses the Zookeeper server running on the localhost to store configuration information about the "cluster" of Catchers consisting of just this server.  The catcher will be accessible on port 9004.
+Use
+
+    sudo update-alternatives --config java
+
+to select java 7.  If you want to set it without interaction, try:
+
+    sudo update-alternatives --set java /usr/lib/jvm/java-7-openjdk-amd64/jre/bin/java
+
+Start zookeeper
+==========
+
+The easiest way to get ZK running on many systems like ubuntu is to simply install the zookeeperd
+package and start the service.
+
+    sudo apt-get -y install zookeeperd
+
+After you do this, zookeeper should be running on the standard port of 2181.  Zookeeper is
+not needed for the SimpleCatcher used in the demo so you probably can just skip this step.
+
+Download source and compile
+==========
+
+First compile and install mapr-spout:
+
+    git clone git://github.com/boorad/mapr-spout.git
+    cd mapr-spout
+    mvn install -DskipTests
+
+You can run the tests if you like.  They should take about a minute to run and should
+complete successfully.  Note that there are some scaring looking log outputs along the
+way as various failure modes are tested.
+
+Note also that the first time you compile mapr-spout all kinds of dependencies will be
+downloaded.  This should go much faster the second time around.
+
+How to Run a Simple Catcher Server
+==========
+
+To run the simplest kind of catcher server, try this
+
+    java -cp target/mapr-spout-0.1-SNAPSHOT-jar-with-dependencies.jar com.mapr.franz.simple.SimpleCatcher
+
+This will run a catcher cluster that consists of just this server. The catcher will be
+accessible on port 5900 by default and will store data into the directory
+`/tmp/mapr-spout`. You can over-ride the port using the `-port PORT_NUM` option and can
+specify the base directory using `-base DIRECTORY`.
 
 Data Collection Architecture
 ==========
 
-Data collection consists of appending to files and rolling to new files for existing directories.  When messages are received that should be stored in new directories, those directories should be created and then business as usual should proceed.
+The server supports two operations, `Hello` and `Log`. The `Hello` operation returns a
+list of all known servers in the catcher cluster. The `Log` operation logs data for a
+particular topic. If the topic is not being handled by the server that the request is
+sent to, then that server will forward the request to the correct server. In any case,
+the server will return a response that contains the correct server. It is expected that
+the client will cache the topic to server mappings.
 
-For convenience, it is nice to emulate API's like that of Kafka.  In such an emulation, it is probably good to have a single directory per topic and topics should be assigned to particular API end-points.  The API servers should monitor Zookeeper to see when the collection of API servers changes.  
+When a server fails or is taken out of service, the servers will rearrange which servers
+handle which topics. When this is done, a considerable number of messages may have to be
+forwarded, but the clients should quickly cache the new topic to server mappings and the
+amount of forwarded messages should quickly decline.
 
-Messages that arrive at the wrong API server for a particular topic should be forwarded to the correct server and the reply to the client should contain the correct API server to use.  This will allow clients to rapidly adapt to changes in the API serving farm without having to access Zookeeper directly.  It will also allow clients to robust to network misconfigurations that prevent them from contacting all of the API servers.
+Messages are encapsulated in a proto-buf envelope that records the topic and the time it
+was received. Both the `Log` request format and the on disk format were designed so that
+it should be possible to copy the message payload directly from the socket to off-heap
+memory as the request is received and directly from this off-heap to disk as it is
+stored. Current servers do not make use of this optimization, however.
 
-- data collection will be via an API similar to (if not identical to) Kafka's.  The client should be able to interrogate Zookeeper to find the current live data collector
+The catcher uses the Kafka convention of having a directory per topic and naming the
+files in that directory by the offset of the beginning of that file from the beginning
+of all messages received. When a file gets large enough, the server starts a new file.
+When a server first starts handling a topic, possibly because of the failure of another
+server, a gap is left to ensure if the previous server reappears and belatedly writes
+some messages that it is unlikely to write enough to overlap the beginning of the file
+that is being written by the new server.
 
-- there will be a fail-over data collector process that appends to the data files
-
-- disorderly fail-over of the collector will result in a few seconds of data loss.  Orderly fail-over should not result in any data loss
-
-- processing of data will be via a Storm spout or a map-reduce batch process that reads a snapshot of the data
-
-- the system will work on local files but will require MapR for failure tolerance
-
+Queued data can be stored in any POSIX-like file system. For failure tolerance, a
+distributed file system such as a MapR cluster mounted via NFS can be used. Changes to
+files written via one NFS server may not be seen for a few seconds by a reader reading
+from another NFS server. If you use the `noac` option when mounting the NFS partition,
+this delay can be made much shorter (as little as a few tens of milliseconds) at the
+cost of considerably more chatting with the NFS server and between the NFS server and
+the MapR cluster.
 
 Missing bits
 ==========
 
-The queueing of directory servers is missing.  So is the data collection API and servers.
-
-I haven't written any parsers yet.  Such an exercise might expose some interesting problems.
-
-Likewise, we should have a couple of different strategies to handle the situation when there are lots of pending 
-tuples.  One strategy is to simply drop tuples if we have too many pending tuples.  Another strategy is to only emit 
-tuples when there are no more than a critical number of tuples pending.  
-
-The first strategy will not quench the volume of tuples entering the system and seems really error prone.
-
-The second strategy is much more conservative in that it implements a viable form of source quenching, but it might 
-be prone to stalling if one of many bolts gets very slow.  Hopefully, the heartbeats will let Storm handle this by 
-killing such pathological bolts.
-
-Another potential problem is that on restart, we replay all files that had a pending tuple from the point where the 
-pending tuple started.  That could conceivably replay lots of tuples that have been acked.  Whether this is really 
-a problem is an open question.
+There are two kinds of distributed catcher server that are under construction. One type
+uses Zookeeper to assign topics and to determine which servers are live. They other type
+uses Hazelcast for the same job. The Zookeeper approach avoids split brain problems at
+the catcher cluster level, but requires an external Zookeeper cluster to work well. The
+Hazelcast system is much easier to configure and start since it is self-organizing.
+Since split brain issues will be handled by the distributed file system in any case, the
+Hazelcast approach will probably eventually be preferred. Neither clustered catcher
+system is ready for production at this time.
