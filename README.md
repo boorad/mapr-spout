@@ -71,6 +71,21 @@ accessible on port 5900 by default and will store data into the directory
 `/tmp/mapr-spout`. You can over-ride the port using the `-port PORT_NUM` option and can
 specify the base directory using `-base DIRECTORY`.
 
+A catcher without a traffic source is boring.  So you may want to run the included traffic simulator.  
+
+    java -cp target/mapr-spout-0.1-SNAPSHOT-jar-with-dependencies.jar com.mapr.franz.Traffic localhost
+
+This command requires a host name where you are running a catcher.  If you are running a SimpleCatcher, 
+then there is only one hostname to be had, but if you are running a full cluster you can tell the 
+traffic generator about any of them and it should discover the others.  There are a number of options
+that can be set on the traffic generator, but they all have reasonable defaults.
+
+One particularly interesting thing about generating traffic is that the SimpleCatcher has a magic topic
+called `-metrics-`.  This topic contains messages recorded at invervals of 1 second, 10 seconds, 1 minute 
+and 5 minutes.  Each of these messages contains the time, the time interval and the number of unique topics 
+and total number of messages for the time interval being recorded.  These messages are formatted using
+the `DataPoint` message from `Metric.proto`.
+
 Data Collection Architecture
 ==========
 
