@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@
  */
 
 option java_generic_services = true;
+
 option java_package = "com.mapr.franz.catcher.wire";
+
 option java_outer_classname = "MessageQueue";
 
 message Message {

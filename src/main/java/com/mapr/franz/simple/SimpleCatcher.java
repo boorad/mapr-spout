@@ -20,6 +20,7 @@ import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
 import com.googlecode.protobuf.pro.duplex.server.DuplexTcpServerBootstrap;
 import com.mapr.franz.catcher.wire.Catcher;
+import org.jboss.netty.channel.ChannelException;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -60,12 +61,26 @@ public class SimpleCatcher {
     public static void run(Options opts) throws SocketException, FileNotFoundException {
         logger.warn("Starting server {}", opts);
 
+        SimpleCatcherService service;
+        try {
+            service = new SimpleCatcherService(opts.port, opts.basePath);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            return;
+        }
+
         DuplexTcpServerBootstrap bootstrap = startProtoServer(opts.port);
         bootstrap.getRpcServiceRegistry().registerBlockingService(
-                Catcher.CatcherService.newReflectiveBlockingService(new SimpleCatcherService(opts.port, opts.basePath)));
-        bootstrap.bind();
-    }
+                Catcher.CatcherService.newReflectiveBlockingService(service));
 
+        try {
+            bootstrap.bind();
+        } catch (ChannelException e) {
+            // releasing resources allows the server to exit
+            bootstrap.releaseExternalResources();
+            throw e;
+        }
+    }
 
     private static DuplexTcpServerBootstrap startProtoServer(int port) {
         PeerInfo serverInfo = new PeerInfo("0.0.0.0", port);
@@ -75,7 +90,8 @@ public class SimpleCatcher {
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool())
         );
-        bootstrap.setRpcServerCallExecutor(new ThreadPoolCallExecutor(10, 10));
+        ThreadPoolCallExecutor pool = new ThreadPoolCallExecutor(10, 10);
+        bootstrap.setRpcServerCallExecutor(pool);
         return bootstrap;
     }
 
