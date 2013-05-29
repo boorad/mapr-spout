@@ -14,23 +14,16 @@
  * limitations under the License.
  */
 
-package com.mapr.franz.catcher;
-
-import com.google.protobuf.RpcController;
-import com.googlecode.protobuf.pro.duplex.PeerInfo;
-import com.mapr.franz.catcher.wire.Catcher;
-
 /**
- * The Catcher API.  We use an interface to allow simple mocking.
+ * This defines the envelope that contains application level messages while
+ * in the queue.
  */
-public interface CatcherConnection {
-    Catcher.CatcherService.BlockingInterface getService();
 
-    RpcController getController();
+option java_generic_services = true;
+option java_package = "com.mapr.franz.catcher.wire";
+option java_outer_classname = "MessageQueue";
 
-    PeerInfo getServer();
-
-    void close();
-
-    void setServer(PeerInfo host);
+message Message {
+    optional int64 time = 1;
+    optional bytes payload = 2;
 }

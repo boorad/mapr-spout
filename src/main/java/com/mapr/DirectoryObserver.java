@@ -1,3 +1,19 @@
+/*
+ * Copyright MapR Technologies, $year
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.mapr;
 
 import backtype.storm.spout.SpoutOutputCollector;
@@ -58,8 +74,6 @@ public class DirectoryObserver implements Serializable, Closeable {
     private DirectoryScanner scanner;
     private FileInputStream currentInput = null;
 
-    private boolean replayFailedMessages = true;
-
     // these are set in the constructors
     private StreamParserFactory factory;
     private File statusFile;
@@ -76,7 +90,6 @@ public class DirectoryObserver implements Serializable, Closeable {
     private Queue<PendingMessage> pendingReplays = Lists.newLinkedList();
 
     private StreamParser parser = null;
-    private SpoutOutputCollector collector;
     private double nextCheckPointTime = 0;
 
     public DirectoryObserver(StreamParserFactory factory, File statusFile)
@@ -109,43 +122,48 @@ public class DirectoryObserver implements Serializable, Closeable {
             currentInput = openNextInput();
         }
 
-        // TODO need to persist current reading state somewhere
-        while (currentInput != null) {
-            // read a record
-            long position = parser.currentOffset();
-            List<Object> r = parser.nextRecord();
+        try {
+            // TODO need to persist current reading state somewhere
+            while (currentInput != null) {
+                // read a record
+                long position = parser.currentOffset();
+                List<Object> r = parser.nextRecord();
 
-            // assert currentInput != null
-            if (r == null) {
-                // reached end of current file
-                // (currentInput != null && r == null) so we enter loop at least
-                // once
-                while (currentInput != null && r == null) {
-                    currentInput = openNextInput();
+                // assert currentInput != null
+                if (r == null) {
+                    // reached end of current file
+                    // (currentInput != null && r == null) so we enter loop at least
+                    // once
+                    while (currentInput != null && r == null) {
+                        currentInput = openNextInput();
 
-                    // assert r == null
-                    if (currentInput != null) {
-                        position = parser.currentOffset();
-                        r = parser.nextRecord();
+                        // assert r == null
+                        if (currentInput != null) {
+                            position = parser.currentOffset();
+                            r = parser.nextRecord();
+                        }
+                        // r != null => currentInput != null
                     }
-                    // r != null => currentInput != null
+                    // post: r != null iff currentInput != null
                 }
-                // post: r != null iff currentInput != null
-            }
-            // post: (r != null iff currentInput != null) || (r != null)
-            // post: (r == null => currentInput == null)
+                // post: (r != null iff currentInput != null) || (r != null)
+                // post: (r == null => currentInput == null)
 
-            if (r != null) {
-                messageId++;
-                if (messageId % tuplesPerCheckpoint == 0
-                        || System.nanoTime() / 1e9 > nextCheckPointTime) {
-                    SpoutState.recordCurrentState(ackBuffer, scanner, parser,
-                            statusFile);
-                    nextCheckPointTime = System.nanoTime() / 1e9
-                            + checkPointIntervalSeconds;
+                if (r != null) {
+                    messageId++;
+                    if (messageId % tuplesPerCheckpoint == 0
+                            || System.nanoTime() / 1e9 > nextCheckPointTime) {
+                        SpoutState.recordCurrentState(ackBuffer, scanner, parser,
+                                statusFile);
+                        nextCheckPointTime = System.nanoTime() / 1e9
+                                + checkPointIntervalSeconds;
+                    }
+                    return new Message(messageId, r);
                 }
-                return new Message(messageId, r);
             }
+        } catch (IOException e) {
+            log.error("DirectoryObserver threw I/O exception", e);
+            throw new RuntimeException(e);
         }
         // exit only when all files have been processed completely
         return null;
