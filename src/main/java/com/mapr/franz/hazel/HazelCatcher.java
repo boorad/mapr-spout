@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.hazelcast.config.ClasspathXmlConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.mapr.franz.Server;
 import com.mapr.franz.catcher.Client;
 import com.mapr.franz.catcher.wire.Catcher;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
@@ -46,34 +47,30 @@ import java.util.concurrent.Executors;
 
 /**
  * Server process for catching log messages.
- *
+ * <p/>
  * A server is required to do a number of things:
- *
+ * <p/>
  * a) catch messages for topics it is handling.
- *
+ * <p/>
  * b) catch and forward messages for servers it is not handling
- *
+ * <p/>
  * c) respond to hello messages with a list of the catchers in service
- *
+ * <p/>
  * d) report traffic statistics on topics every few seconds
- *
+ * <p/>
  * e) clean up old queue files when starting a new file.
- *
+ * <p/>
  * Tasks (a), (b) and (c) are handled by the server implementation.
- *
+ * <p/>
  * Task (d) by the statistics reporter.
- *
+ * <p/>
  * Task (e) is handled as part of the message appender.
  */
 public class HazelCatcher {
     private static Logger logger = LoggerFactory.getLogger(HazelCatcher.class);
 
-    private static int id = new SecureRandom().nextInt();
-
     public static void main(String[] args) throws FileNotFoundException, SocketException {
         run(parseOptions(args));
-
-
     }
 
     public static void run(Options opts) throws SocketException, FileNotFoundException {

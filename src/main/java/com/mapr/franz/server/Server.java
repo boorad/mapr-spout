@@ -16,7 +16,11 @@
 
 package com.mapr.franz.server;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
@@ -24,6 +28,7 @@ import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 
 import org.apache.zookeeper.KeeperException;
@@ -34,6 +39,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.google.common.io.Resources;
 import com.googlecode.protobuf.pro.duplex.PeerInfo;
 import com.googlecode.protobuf.pro.duplex.RpcClientChannel;
 import com.googlecode.protobuf.pro.duplex.execute.ThreadPoolCallExecutor;
@@ -65,31 +71,33 @@ import com.mapr.franz.catcher.wire.Catcher;
  */
 public class Server {
     private static Logger log = LoggerFactory.getLogger(Server.class);
+    private static final String PROPERTIES_FILE = "franz-server.properties";
     private static String basePath = "/tmp/mapr-storm";
 
-//    private static final String PROPERTIES_FILE = "mapr-storm.properties";
-
-//    private static final String ZK_CONNECT_STRING = "localhost:2108";
+    private static final String ZK_CONNECT_STRING = "localhost:2108";
     private static final String FRANZ_BASE = "/franz";
+    private static final int FRANZ_PORT = 9013;
 
-//    public static Properties loadProperties() {
-//        Properties props = new Properties();
-//        loadProperties("base.properties", props);
-//        loadProperties(PROPERTIES_FILE, props);
-//        return props;
-//    }
-//
-//    private static Properties loadProperties(String resource, Properties props) {
-//        try {
-//            InputStream is = Resources.getResource(resource).openStream();
-//            log.info("Loading properties from '" + resource + "'.");
-//            props.load(is);
-//        } catch (Exception e) {
-//            log.info("Not loading properties from '" + resource + "'.");
-//            log.info(e.getMessage());
-//        }
-//        return props;
-//    }
+    public static Properties loadProperties() {
+        Properties props = new Properties();
+        try {
+            InputStream base = Resources.getResource("base.properties").openStream();
+            props.load(base);
+            base.close();
+
+            File propFile = new File(PROPERTIES_FILE);
+            if (propFile.exists()) {
+                log.debug("Adding additional properties from {}", propFile.getCanonicalPath());
+
+                FileInputStream in = new FileInputStream(PROPERTIES_FILE);
+                props.load(in);
+                in.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return props;
+    }
 
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
 
@@ -100,19 +108,10 @@ public class Server {
             System.exit(1);
         }
 
-//        Properties props = loadProperties();
-//        log.info(props.toString());
+        Properties props = loadProperties();
 
-//        log.info(args[0]);
-//        log.info(args[1]);
-//        log.info(args[2]);
-//        log.info(args[3]);
-
-        setBasePath(args[0]);
-        int port = Integer.parseInt(args[2]);
-        PeerInfo serverInfo = new PeerInfo(args[1], port);
-        String zk_str = args[3];
-
+        int port = Integer.parseInt(args[1]);
+        PeerInfo serverInfo = new PeerInfo(args[0], port);
         //You need then to create a DuplexTcpServerBootstrap and provide it an RpcCallExecutor.
 
 
@@ -134,10 +133,10 @@ public class Server {
 
         //Finally binding the bootstrap to the TCP port will start off the socket accepting and clients can start to connect.
         long serverId = new SecureRandom().nextLong();
-//        String zk_str = props.getProperty("zookeeper.connection.string", ZK_CONNECT_STRING);
-//        if (args.length == 3) {
-//            zk_str = args[2];
-//        }
+        String zk_str = props.getProperty("zookeeper.connection.string", ZK_CONNECT_STRING);
+        if (args.length == 3) {
+            zk_str = args[2];
+        }
 
         List<Client.HostPort> addresses = Lists.newArrayList();
         Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
@@ -221,5 +220,4 @@ public class Server {
             return result;
         }
     }
-
 }

@@ -15,17 +15,19 @@
  */
 
 /**
- * This defines the envelope that contains application level messages while
- * in the queue.
+ * This defines the metric data points that are recorded by some catchers under the
+ * '- metrics -' topic.
  */
 
 option java_generic_services = true;
 
-option java_package = "com.mapr.franz.catcher.wire";
+option java_package = "com.mapr.franz.catcher.metrics";
 
-option java_outer_classname = "MessageQueue";
+option java_outer_classname = "Metrics";
 
-message Message {
-    optional int64 time = 1;
-    optional bytes payload = 2;
+message DataPoint {
+    optional double time = 1;
+    optional uint32 interval = 2;
+    optional uint32 uniqueTopics = 3;
+    optional uint32 messages = 4;
 }

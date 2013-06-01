@@ -1,5 +1,5 @@
 /*
- * Copyright MapR Technologies, $year
+ * Copyright MapR Technologies, 2013
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,15 @@
  */
 
 option java_generic_services = true;
+
 option java_package = "com.mapr.franz.catcher.wire";
+
 option java_outer_classname = "Catcher";
 
 // gets a current list of servers
 message Hello {
-    optional uint64 clientId = 1;      // client id for logging
-    optional string application = 2;  // application name for logging purposes
+    optional uint64 clientId = 1; // client id for logging
+    optional string application = 2; // application name for logging purposes
 }
 
 message HelloResponse {
@@ -33,9 +35,9 @@ message HelloResponse {
 // sends a message to a topic
 message LogMessage {
     optional uint64 clientId = 1;
-    optional string topic = 2;
-    optional bytes payload = 3;
-    optional bool force = 4;
+    optional bool force = 2;
+    optional string topic = 3;
+    optional bytes payload = 4;
 }
 
 // the response includes one or more redirects for the next time
@@ -73,7 +75,7 @@ message Host {
 
 // the service itself
 service CatcherService {
-    rpc hello(Hello) returns (HelloResponse);
-    rpc log(LogMessage) returns (LogMessageResponse);
-    rpc close(Close) returns (CloseResponse);
+    rpc hello (Hello) returns (HelloResponse);
+    rpc log (LogMessage) returns (LogMessageResponse);
+    rpc close (Close) returns (CloseResponse);
 }
