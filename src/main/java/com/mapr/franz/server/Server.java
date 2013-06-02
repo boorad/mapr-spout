@@ -110,11 +110,23 @@ public class Server {
 
         Properties props = loadProperties();
 
-        int port = Integer.parseInt(args[1]);
-        PeerInfo serverInfo = new PeerInfo(args[0], port);
+        /*
+         * args
+         */
+        log.info("ARGUMENTS:");
+        for(int i=0; i < args.length; i++) {
+            log.info(i + "-" + args[i]);
+        }
+
+        setBasePath(args[0]);
+        int port = Integer.parseInt(args[2]);
+        PeerInfo serverInfo = new PeerInfo(args[1], port);
+        String zk_str = props.getProperty("zookeeper.connection.string", ZK_CONNECT_STRING);
+        if (args.length == 4) {
+            zk_str = args[3];
+        }
+
         //You need then to create a DuplexTcpServerBootstrap and provide it an RpcCallExecutor.
-
-
         DuplexTcpServerBootstrap bootstrap = new DuplexTcpServerBootstrap(
                 serverInfo,
                 new NioServerSocketChannelFactory(
@@ -133,10 +145,6 @@ public class Server {
 
         //Finally binding the bootstrap to the TCP port will start off the socket accepting and clients can start to connect.
         long serverId = new SecureRandom().nextLong();
-        String zk_str = props.getProperty("zookeeper.connection.string", ZK_CONNECT_STRING);
-        if (args.length == 3) {
-            zk_str = args[2];
-        }
 
         List<Client.HostPort> addresses = Lists.newArrayList();
         Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
