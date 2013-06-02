@@ -11,3 +11,4 @@
 *.ear
 
 target/*
+conf.ln
