@@ -16,16 +16,15 @@
 
 package com.mapr;
 
-import backtype.storm.spout.SpoutOutputCollector;
-import com.google.common.base.Splitter;
-import com.google.common.collect.Lists;
-import com.google.protobuf.ByteString;
-import com.mapr.franz.catcher.wire.MessageQueue;
-import com.mapr.franz.server.ProtoLogger;
-import com.mapr.storm.streamparser.StreamParser;
-import org.junit.Test;
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.assertTrue;
 
-import java.io.*;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -33,7 +32,17 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static junit.framework.Assert.*;
+import org.junit.Test;
+
+import backtype.storm.spout.SpoutOutputCollector;
+import backtype.storm.tuple.Fields;
+
+import com.google.common.base.Splitter;
+import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
+import com.mapr.franz.catcher.wire.MessageQueue;
+import com.mapr.franz.server.ProtoLogger;
+import com.mapr.storm.streamparser.StreamParser;
 
 public class ProtoSpoutTest {
     @Test
@@ -53,7 +62,7 @@ public class ProtoSpoutTest {
             }
 
             @Override
-            public List<String> getOutputFields() {
+            public Fields getOutputFields() {
                 throw new UnsupportedOperationException("Default operation");
             }
         });
@@ -118,7 +127,7 @@ public class ProtoSpoutTest {
             }
 
             @Override
-            public List<String> getOutputFields() {
+            public Fields getOutputFields() {
                 throw new UnsupportedOperationException("Default operation");
             }
         }, statusPath.toFile(), new File(homeDir.toFile(), "topic-1"), Pattern.compile("[0-9a-f]*"));

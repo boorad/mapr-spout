@@ -16,11 +16,6 @@
 
 package com.mapr;
 
-import com.google.protobuf.ByteString;
-import com.mapr.franz.catcher.wire.MessageQueue;
-import com.mapr.storm.streamparser.StreamParser;
-import com.mapr.storm.streamparser.StreamParserFactory;
-
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -30,10 +25,19 @@ import java.nio.channels.FileChannel;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import backtype.storm.tuple.Fields;
+
+import com.google.protobuf.ByteString;
+import com.mapr.franz.catcher.wire.MessageQueue;
+import com.mapr.storm.streamparser.StreamParser;
+import com.mapr.storm.streamparser.StreamParserFactory;
+
 /**
  * Tails messages from a file with a protobuf based envelope format.
  */
 public class ProtoSpout extends TailSpout {
+    private static final long serialVersionUID = 4645868026918866502L;
+
     public ProtoSpout(TupleParser parser, File statusFile, File inputDirectory, Pattern inputFileNamePattern) throws IOException {
         super(new MessageParserFactory(parser), statusFile, inputDirectory, inputFileNamePattern);
     }
@@ -41,10 +45,11 @@ public class ProtoSpout extends TailSpout {
     public static abstract class TupleParser {
         public abstract List<Object> parse(ByteString buffer);
 
-        public abstract List<String> getOutputFields();
+        public abstract Fields getOutputFields();
     }
 
     public static class MessageParserFactory implements StreamParserFactory {
+        private static final long serialVersionUID = 3811432737101662002L;
         private TupleParser parser;
 
         public MessageParserFactory(TupleParser parser) {
@@ -57,7 +62,7 @@ public class ProtoSpout extends TailSpout {
         }
 
         @Override
-        public List<String> getOutputFields() {
+        public Fields getOutputFields() {
             return parser.getOutputFields();
         }
 

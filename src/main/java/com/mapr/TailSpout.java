@@ -16,21 +16,6 @@
 
 package com.mapr;
 
-import backtype.storm.spout.SpoutOutputCollector;
-import backtype.storm.task.TopologyContext;
-import backtype.storm.topology.OutputFieldsDeclarer;
-import backtype.storm.topology.base.BaseRichSpout;
-import backtype.storm.tuple.Fields;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.mapr.storm.DirectoryScanner;
-import com.mapr.storm.PendingMessage;
-import com.mapr.storm.SpoutState;
-import com.mapr.storm.streamparser.StreamParser;
-import com.mapr.storm.streamparser.StreamParserFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -39,6 +24,22 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import backtype.storm.spout.SpoutOutputCollector;
+import backtype.storm.task.TopologyContext;
+import backtype.storm.topology.OutputFieldsDeclarer;
+import backtype.storm.topology.base.BaseRichSpout;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.mapr.storm.DirectoryScanner;
+import com.mapr.storm.PendingMessage;
+import com.mapr.storm.SpoutState;
+import com.mapr.storm.streamparser.StreamParser;
+import com.mapr.storm.streamparser.StreamParserFactory;
 
 /**
  * This is a spout that reads records from files. New records can be appended to
@@ -129,7 +130,7 @@ public class TailSpout extends BaseRichSpout {
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer outputFieldsDeclarer) {
-        outputFieldsDeclarer.declare(new Fields(factory.getOutputFields()));
+        outputFieldsDeclarer.declare(factory.getOutputFields());
     }
 
     @SuppressWarnings("rawtypes")
