@@ -22,7 +22,7 @@
 
     <groupId>mapr-storm</groupId>
     <artifactId>mapr-storm</artifactId>
-    <version>0.8</version>
+    <version>0.9-SNAPSHOT</version>
 
     <name>MapR / Storm connector</name>
     <url>https://github.com/mapr/mapr-storm</url>
@@ -45,7 +45,7 @@
         <dependency>
             <groupId>storm</groupId>
             <artifactId>storm</artifactId>
-            <version>0.8.1</version>
+            <version>0.8.2</version>
             <!-- keep storm out of the jar-with-dependencies -->
             <scope>provided</scope>
         </dependency>

@@ -17,12 +17,15 @@
 package com.mapr.storm;
 
 import java.io.File;
+import java.io.Serializable;
 import java.util.List;
 
 /**
 * In reliable mode, PendingMessage objects record messages that haven't been ack'ed.
 */
-public class PendingMessage {
+public class PendingMessage implements Serializable {
+
+    private static final long serialVersionUID = -3094938796047095564L;
     private File logFile;
     private long offset;
     private List<Object> tuple;
