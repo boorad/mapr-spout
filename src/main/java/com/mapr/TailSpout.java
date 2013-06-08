@@ -18,6 +18,7 @@ package com.mapr;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -194,8 +195,8 @@ public class TailSpout extends BaseRichSpout {
                 }
             }
             // exit after emitting a tuple or when end of current input is found
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } catch (IOException ioe) {
+            throw new RuntimeException(ioe);
         }
     }
 
@@ -203,6 +204,17 @@ public class TailSpout extends BaseRichSpout {
         PendingMessage next = pendingReplays.poll();
         while (next != null) {
             if (next.getFile().exists()) {
+                // TODO: this seems like a nasty hack for when we have PendingMessages
+                if( parser == null ) {
+                    FileInputStream r;
+                    try {
+                        r = new FileInputStream(next.getFile());
+                        parser = factory.createParser(r);
+                    } catch (FileNotFoundException e) {
+                        log.error("can't establish parser");
+                        e.printStackTrace();
+                    }
+                }
                 return scanner.forceInput(next.getFile(), next.getOffset());
             } else {
                 log.error("Replay file {} has disappeared", next.getFile());
